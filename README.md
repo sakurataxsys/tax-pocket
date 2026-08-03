@@ -11,7 +11,7 @@
 *(URL とホーム画面への追加手順は、第1ステップの実装後に実機で確認してから記載する)*
 
 1. スマートフォンのブラウザで下記URLを開く
-   - `https://kenjio-skr.github.io/tax-pocket/`
+   - `https://sakurataxsys.github.io/tax-pocket/`
 2. ホーム画面に追加する（手順はOS・ブラウザで異なるため、別紙の手順書を参照）
 3. 以後はホーム画面のアイコンから開く
 

@@ -2,8 +2,8 @@
 
 ## 着手前に決める・確かめる
 
-- [x] **GitHub リポジトリを作る** → `kenjiO-skr/tax-pocket`（**public**）。private からの Pages 配信は Pro 以上が必要で、隠せるのはコードと履歴だけ＝見合わないと判断（判断ログ D-10）
-- [x] GitHub Pages を有効化し、push → 公開の経路を空のページ1枚で通した → `https://kenjio-skr.github.io/tax-pocket/` が HTTP 200（判断ログ D-11）。ブランチは `master` → `main` に改名済み
+- [x] **GitHub リポジトリを作る** → **`sakurataxsys/tax-pocket`（public）**。private からの Pages 配信は Pro 以上が必要で、隠せるのはコードと履歴だけ＝見合わないと判断（判断ログ D-10）。個人アカウントで作成後、事務所の組織アカウントへ移管した（判断ログ D-13）
+- [x] GitHub Pages を有効化し、push → 公開の経路を空のページ1枚で通した → **`https://sakurataxsys.github.io/tax-pocket/`** が HTTP 200（判断ログ D-11・D-13）。ブランチは `master` → `main` に改名済み
 - [x] 職員の**人数感** → **16人以上**。手順書に「改正を反映したことの知らせ方」も含める（判断ログ D-12）
 
 ## 第1ステップ（単独完結・保守ほぼゼロの5メニュー）
