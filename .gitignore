@@ -1,0 +1,29 @@
+# 依存関係
+node_modules/
+package-lock.json.bak
+
+# 認証情報（このリポジトリは公開のため特に厳格に）
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# 作業ファイル
+*.tmp
+*.bak
+scratch/
+tmp/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# エディタ
+.vscode/
+.idea/
+
+# 実データを置かないための保険（このリポジトリに実データは存在しない前提）
+*_実データ*
+*_本番*
