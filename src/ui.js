@@ -135,6 +135,42 @@ export function breakdown(steps) {
   );
 }
 
+/**
+ * 年ごとの表（減価償却のスケジュール）。
+ * 罫線で囲わず、行の区切りだけを薄く入れる（内部ツール4原則）。
+ */
+export function schedule_table(title, rows) {
+  return h("section", { class: "block" },
+    h("h2", { class: "block__title" }, title),
+    h("table", { class: "schedule" },
+      h("thead", {},
+        h("tr", {},
+          h("th", { class: "schedule__th" }, "年目"),
+          h("th", { class: "schedule__th schedule__th--num" }, "償却費"),
+          h("th", { class: "schedule__th schedule__th--num" }, "期末簿価"),
+        ),
+      ),
+      h("tbody", {},
+        rows.map((r) =>
+          h("tr", {},
+            h("td", { class: "schedule__year" },
+              h("span", {}, `${r.year}`),
+              r.note && h("span", { class: "schedule__note" }, r.note),
+            ),
+            h("td", { class: "schedule__num" }, r.amount),
+            h("td", { class: "schedule__num schedule__num--muted" }, r.balance),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/** 入力欄のすぐ下に出す1行の注意（画面下まで読まれない前提で置く） */
+export function warn_line(text) {
+  return h("p", { class: "warn" }, text);
+}
+
 /** 根拠・注意など、文章のかたまり */
 export function note_block(title, items) {
   return h("section", { class: "block" },

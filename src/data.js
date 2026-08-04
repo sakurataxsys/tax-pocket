@@ -21,3 +21,12 @@ export async function load_taishokukin_tables() {
   ]);
   return { taishokukin, income_tax };
 }
+
+/** 減価償却の計算に必要なデータをまとめて読む */
+export async function load_genka_shokyaku_tables() {
+  const [shokyakuritsu, genka_shokyaku] = await Promise.all([
+    load_data("shokyakuritsu"),
+    load_data("genka_shokyaku"),
+  ]);
+  return { shokyakuritsu, genka_shokyaku };
+}

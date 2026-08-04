@@ -268,6 +268,53 @@ main {
   color: var(--muted);
 }
 
+/* 年ごとの表。罫線で囲わず、行の区切りだけ薄く入れる */
+.schedule {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule__th {
+  padding: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-align: left;
+}
+.schedule__th--num { text-align: right; }
+
+.schedule tbody tr { box-shadow: inset 0 1px 0 rgba(16, 18, 29, 0.06); }
+
+.schedule__year {
+  display: flex;
+  flex-direction: column;
+  padding: 0.6875rem 0.5rem 0.6875rem 0;
+  font-size: 0.9375rem;
+}
+
+.schedule__note { font-size: 0.6875rem; line-height: 1.5; color: var(--muted); }
+
+.schedule__num {
+  padding: 0.6875rem 0 0.6875rem 0.5rem;
+  font-size: 0.9375rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.schedule__num--muted { color: var(--muted); }
+
+/* 入力欄の直下に出す1行の注意 */
+.warn {
+  margin: -1rem 0 1.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 .notes { margin: 0; padding: 0; list-style: none; }
 
 .notes li {

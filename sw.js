@@ -8,7 +8,7 @@
 // ★ロジック（src/ 配下）を変更したら CACHE_VERSION を上げること。
 //   data/*.json を差し替えるだけの改正では上げる必要はない（network-first のため）。
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
@@ -22,6 +22,7 @@ const SHELL = [
   "./src/data.js",
   "./src/format.js",
   "./src/calc/taishokukin.js",
+  "./src/calc/genka_shokyaku.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon-180.png",
@@ -33,7 +34,12 @@ const SHELL = [
 //   そのまま電波のない客先へ行った」端末で税率表だけ無い状態になる。
 // 計算メニューを増やすときは、ここにも足すこと（メニュー追加は開発者の作業なので、
 // 税務職員が data/ を差し替えるだけの改正でここを触る必要はない）。
-const DATA_FILES = ["./data/taishokukin.json", "./data/income_tax_rates.json"];
+const DATA_FILES = [
+  "./data/taishokukin.json",
+  "./data/income_tax_rates.json",
+  "./data/shokyakuritsu.json",
+  "./data/genka_shokyaku.json",
+];
 
 const DATA_TIMEOUT_MS = 2000;
 
