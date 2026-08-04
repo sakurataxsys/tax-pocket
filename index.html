@@ -2,29 +2,34 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>税額ポケット</title>
-<style>
-  :root { color-scheme: light; }
-  body {
-    margin: 0;
-    padding: 4rem 1.5rem;
-    background: #fff;
-    color: #1a1a1a;
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    line-height: 1.9;
-  }
-  main { max-width: 32rem; margin: 0 auto; }
-  h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: .02em; margin: 0 0 2.5rem; }
-  .status { font-size: 1rem; margin: 0 0 3rem; }
-  .note { color: #6b6b6b; font-size: .8125rem; margin: 0; }
-</style>
+<meta name="description" content="客先で使う税額計算ツール">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png" sizes="192x192">
+<!-- iOS はホーム画面のアイコンに PNG を要求する（SVG は不可） -->
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon-180.png">
+<!-- manifest の display: standalone は iOS 11.3 以降が解釈する。
+     次の2行は旧OSとスプラッシュ等の挙動のための保険として併記している -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="税額ポケット">
+<link rel="stylesheet" href="./styles/app.css">
 </head>
 <body>
-<main>
-  <h1>税額ポケット</h1>
-  <p class="status">準備中です。</p>
-  <p class="note">本ツールの計算結果は概算であり、申告その他の税務判断の根拠として用いることはできません。実際の税額は個別の事情により異なります。</p>
-</main>
+<header class="appbar">
+  <a class="appbar__back" id="back" href="#/" hidden>メニュー</a>
+  <span class="appbar__title">税額ポケット</span>
+</header>
+
+<main id="app"></main>
+
+<footer class="disclaimer">
+  <p>本ツールの計算結果は概算であり、申告その他の税務判断の根拠として用いることはできません。実際の税額は個別の事情により異なります。</p>
+</footer>
+
+<script type="module" src="./src/app.js"></script>
 </body>
 </html>
