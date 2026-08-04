@@ -31,6 +31,12 @@ export async function load_genka_shokyaku_tables() {
   return { shokyakuritsu, genka_shokyaku };
 }
 
+/** 延滞税・利子税の計算に必要なデータをまとめて読む */
+export async function load_entaizei_tables() {
+  const entaizei = await load_data("entaizei");
+  return { entaizei };
+}
+
 /** 印紙税の計算に必要なデータをまとめて読む */
 export async function load_inshizei_tables() {
   const [inshizei, inshizei_hyo] = await Promise.all([

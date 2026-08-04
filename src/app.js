@@ -7,10 +7,12 @@ import {
   load_taishokukin_tables,
   load_genka_shokyaku_tables,
   load_inshizei_tables,
+  load_entaizei_tables,
 } from "./data.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
 import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
+import { calc_entaizei, needs_kikan_tokurei_chui } from "./calc/entaizei.js";
 import {
   format_en,
   format_nenbun,
@@ -53,7 +55,12 @@ const MENU = [
     ready: true,
   },
   { name: "登録免許税", desc: "登記の種類・課税標準から", ready: false },
-  { name: "延滞税・利子税", desc: "納付が遅れた日数から", ready: false },
+  {
+    path: "#/entaizei",
+    name: "延滞税・利子税",
+    desc: "納付が遅れた日数から",
+    ready: true,
+  },
 ];
 
 // ------------------------------------------------------------ メニュー画面
@@ -755,6 +762,183 @@ function render_inshizei_result(r, input, tables) {
   return blocks;
 }
 
+// ------------------------------------------------------- 延滞税・利子税画面
+
+async function render_entaizei() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let tables;
+  try {
+    tables = await load_entaizei_tables();
+  } catch {
+    root.replaceChildren(
+      page_title("延滞税・利子税"),
+      message_box(
+        "割合の表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  const in_shurui = select_input(
+    [
+      { value: "延滞税", label: "延滞税（納付が遅れた）" },
+      { value: "利子税", label: "利子税（申告期限の延長など）" },
+    ],
+    "延滞税",
+  );
+  const in_honzei = money_input({ placeholder: "0" });
+  const in_hotei = date_input(today_iso());
+  const in_kubun = select_input(
+    [
+      { value: "期限内", label: "期限内申告（納期限＝法定納期限）" },
+      { value: "期限後", label: "期限後申告・修正申告（納期限＝提出日）" },
+    ],
+    "期限内",
+  );
+  const in_nokigen = date_input(today_iso());
+  const in_kanno = date_input(today_iso());
+
+  const hotei_field = field("法定納期限", in_hotei, "この日の翌日から日数を数えます");
+  const hotei_label = hotei_field.querySelector(".field__label");
+  const hotei_note = hotei_field.querySelector(".field__note");
+  const kubun_field = field("申告の区分", in_kubun);
+  const nokigen_field = field(
+    "納期限（申告書を提出した日）",
+    in_nokigen,
+    "この日の翌日から2月を経過する日までは低い割合が適用されます",
+  );
+  const nokigen_wrap = h("div", { hidden: true }, nokigen_field);
+  const result_area = h("div", { class: "result-area" });
+
+  const form = h("section", { class: "form" },
+    field("計算するもの", in_shurui),
+    field("本税の額（円）", in_honzei, "1万円未満は切り捨てて計算します（国税通則法118条3項）"),
+    hotei_field,
+    kubun_field,
+    nokigen_wrap,
+    field("完納した日", in_kanno, "延滞税・利子税はこの日まで日割りで計算します"),
+  );
+
+  function recalc() {
+    const is_rishi = in_shurui.value === "利子税";
+    hotei_label.textContent = is_rishi ? "申告書の提出期限" : "法定納期限";
+    hotei_note.textContent = is_rishi
+      ? "延長後の期限ではなく、延長前の本来の提出期限を入れます"
+      : "この日の翌日から日数を数えます";
+    kubun_field.hidden = is_rishi;
+    const is_kigengo = !is_rishi && in_kubun.value === "期限後";
+    nokigen_wrap.hidden = !is_kigengo;
+    if (!is_kigengo) in_nokigen.value = in_hotei.value;
+
+    const input = {
+      shurui: in_shurui.value,
+      honzei: Number(String(in_honzei.value).replace(/[^0-9]/g, "") || 0),
+      hotei_nokigen: in_hotei.value,
+      nokigen: is_kigengo ? in_nokigen.value : in_hotei.value,
+      kanno_bi: in_kanno.value,
+      is_kigengo,
+    };
+
+    const r = calc_entaizei(input, tables);
+    if (!r.ok) {
+      result_area.replaceChildren(message_box(r.riyu));
+      return;
+    }
+    result_area.replaceChildren(...render_entaizei_result(r, input, tables));
+  }
+
+  for (const el of [in_shurui, in_honzei, in_hotei, in_kubun, in_nokigen, in_kanno]) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+
+  root.replaceChildren(
+    page_title("延滞税・利子税", "納付が遅れたときの附帯税"),
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/** 延滞税・利子税の結果・計算過程・根拠を組み立てる */
+function render_entaizei_result(r, input, tables) {
+  const blocks = [];
+
+  if (needs_kikan_tokurei_chui(input)) {
+    blocks.push(
+      warn_line(
+        "法定納期限から1年を経過した後に申告書を提出しています。この場合は延滞税の計算期間から一定の期間を控除できることがありますが（国税通則法61条）、このツールは控除しません。実際より過大に出ています。",
+      ),
+    );
+  }
+
+  blocks.push(
+    result_card(
+      `${r.shurui}の額`,
+      format_en(r.zeigaku),
+      [
+        { label: "計算の基礎となる税額", value: format_en(r.kiso_zeigaku) },
+        { label: "本税の額", value: format_en(input.honzei) },
+      ],
+    ),
+  );
+
+  if (r.riyu_zero) blocks.push(note_block("0円になる理由", [r.riyu_zero]));
+
+  const steps = [
+    {
+      label: "計算の基礎となる税額",
+      value: format_en(r.kiso_zeigaku),
+      note: "本税の額の1万円未満を切り捨て（国税通則法118条3項）",
+    },
+  ];
+
+  if (r.ni_tsuki_keika_bi) {
+    steps.push({
+      label: "納期限の翌日から2月を経過する日",
+      value: format_hizuke(r.ni_tsuki_keika_bi),
+      note:
+        `納期限 ${format_hizuke(input.nokigen)} の翌日を起算日として、` +
+        "応当する日の前日に満了します（国税通則法10条1項3号）",
+    });
+  }
+
+  for (const k of r.kikan) {
+    for (const row of k.rows) {
+      steps.push({
+        label: `${k["名称"]}（${row["適用年表示"]}）`,
+        value: format_en(row["金額"]),
+        note:
+          `${format_hizuke(row["開始"])} 〜 ${format_hizuke(row["終了"])}　${row["日数"]}日 × 年${row["割合"]}%` +
+          " ／ 1円未満切捨て（租税特別措置法96条2項）",
+      });
+    }
+  }
+
+  steps.push({
+    label: `${r.shurui}の額`,
+    value: format_en(r.zeigaku),
+    note:
+      `合計 ${format_en(r.kiritsute_mae ?? 0)} の100円未満を切り捨て。` +
+      "全額が1,000円未満のときは全額を切り捨てます（国税通則法119条4項）",
+  });
+
+  blocks.push(breakdown(steps));
+
+  blocks.push(
+    note_block("この計算について", tables.entaizei["注記"].slice(0, 4)),
+    note_block("このツールでは扱わないもの（要相談）", tables.entaizei["扱わないもの"]),
+    note_block("根拠", [
+      ...tables.entaizei["出典"].map((s) => s["名称"]),
+      `年別の割合の最終確認日：${format_hizuke(tables.entaizei["最終確認日"])}`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ------------------------------------------------------------------ ルータ
 
 const ROUTES = {
@@ -762,6 +946,7 @@ const ROUTES = {
   "/taishokukin": render_taishokukin,
   "/genka-shokyaku": render_genka_shokyaku,
   "/inshizei": render_inshizei,
+  "/entaizei": render_entaizei,
 };
 
 function route() {
