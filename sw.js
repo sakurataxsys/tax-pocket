@@ -8,7 +8,7 @@
 // ★ロジック（src/ 配下）を変更したら CACHE_VERSION を上げること。
 //   data/*.json を差し替えるだけの改正では上げる必要はない（network-first のため）。
 
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
@@ -23,6 +23,7 @@ const SHELL = [
   "./src/format.js",
   "./src/calc/taishokukin.js",
   "./src/calc/genka_shokyaku.js",
+  "./src/calc/inshizei.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon-180.png",
@@ -39,6 +40,8 @@ const DATA_FILES = [
   "./data/income_tax_rates.json",
   "./data/shokyakuritsu.json",
   "./data/genka_shokyaku.json",
+  "./data/inshizei.json",
+  "./data/inshizei_hyo.json",
 ];
 
 const DATA_TIMEOUT_MS = 2000;

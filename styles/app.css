@@ -164,6 +164,9 @@ main {
 .input--money, .input--number { text-align: right; }
 .input--select { text-align: left; appearance: none; }
 
+/* iOS の date 入力は既定で内容幅になるため、他の欄と高さ・幅を揃える */
+.input--date { appearance: none; min-height: 3rem; }
+
 /* number 入力のスピナーは関与先での誤操作のもとなので消す */
 .input--number::-webkit-outer-spin-button,
 .input--number::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

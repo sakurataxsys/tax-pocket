@@ -52,9 +52,25 @@ export function format_nen(seireki) {
   return `${seireki}年`;
 }
 
+/**
+ * 年月日 → 和暦の年（「令和8年」）。改元日をまたぐ年は日付で分ける。
+ * 令和は2019年5月1日から、平成は1989年1月8日から。
+ */
+function wareki_nen(y, m, d) {
+  const md = m * 100 + d;
+  if (y > 2019 || (y === 2019 && md >= 501)) {
+    const n = y - 2018;
+    return `令和${n === 1 ? "元" : n}年`;
+  }
+  if (y > 1989 || (y === 1989 && md >= 108)) {
+    const n = y - 1988;
+    return `平成${n === 1 ? "元" : n}年`;
+  }
+  return `${y}年`; // 昭和以前はこのツールの収録範囲外
+}
+
 /** "2026-08-04" → "2026年8月4日（令和8年8月4日）" */
 export function format_hizuke(iso) {
   const [y, m, d] = iso.split("-").map(Number);
-  const wareki = y >= 2019 ? `令和${y - 2018 === 1 ? "元" : y - 2018}年` : `${y}年`;
-  return `${y}年${m}月${d}日（${wareki}${m}月${d}日）`;
+  return `${y}年${m}月${d}日（${wareki_nen(y, m, d)}${m}月${d}日）`;
 }

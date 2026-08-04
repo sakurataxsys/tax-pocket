@@ -30,3 +30,12 @@ export async function load_genka_shokyaku_tables() {
   ]);
   return { shokyakuritsu, genka_shokyaku };
 }
+
+/** 印紙税の計算に必要なデータをまとめて読む */
+export async function load_inshizei_tables() {
+  const [inshizei, inshizei_hyo] = await Promise.all([
+    load_data("inshizei"),
+    load_data("inshizei_hyo"),
+  ]);
+  return { inshizei, inshizei_hyo };
+}

@@ -3,9 +3,14 @@
 // 動的 import は使わない。service worker が版ごとにまとめてキャッシュするため、
 // 後から別の版のモジュールを取りに行く経路を作らない。
 
-import { load_taishokukin_tables, load_genka_shokyaku_tables } from "./data.js";
+import {
+  load_taishokukin_tables,
+  load_genka_shokyaku_tables,
+  load_inshizei_tables,
+} from "./data.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
+import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
 import {
   format_en,
   format_nenbun,
@@ -20,6 +25,7 @@ import {
   money_input,
   number_input,
   select_input,
+  date_input,
   check_input,
   result_card,
   breakdown,
@@ -40,7 +46,12 @@ const MENU = [
     desc: "定額法・定率法",
     ready: true,
   },
-  { name: "印紙税", desc: "契約書等の記載金額から", ready: false },
+  {
+    path: "#/inshizei",
+    name: "印紙税",
+    desc: "契約書等の記載金額から",
+    ready: true,
+  },
   { name: "登録免許税", desc: "登記の種類・課税標準から", ready: false },
   { name: "延滞税・利子税", desc: "納付が遅れた日数から", ready: false },
 ];
@@ -513,12 +524,244 @@ function render_shokyaku_result(r, input, tables) {
   return blocks;
 }
 
+// ------------------------------------------------------------------ 印紙税画面
+
+/** 端末の今日を "YYYY-MM-DD" で返す。toISOString は UTC になるため使わない */
+function today_iso() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+async function render_inshizei() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let tables;
+  try {
+    tables = await load_inshizei_tables();
+  } catch {
+    root.replaceChildren(
+      page_title("印紙税"),
+      message_box(
+        "税額表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  const in_bi = date_input(today_iso());
+  const in_shurui = select_input(
+    tables.inshizei["文書"].map((b) => ({ value: b.key, label: b["表示名"] })),
+    "1",
+  );
+  // 見出しと補足は選んだ号に合わせて書き換えるので、要素の参照を持っておく。
+  // check_input / field は note が空だと補足の要素自体を作らないため、必ず中身のある文字列で作る。
+  const in_kingaku = money_input({ placeholder: "0" });
+  const in_nashi = check_input("記載金額がない", "記載金額のない文書として判定します");
+  const in_keigen = check_input("軽減の対象となる文書である", "対象は条文で確認してください");
+
+  const kingaku_field_el = field("記載金額（円）", in_kingaku, "―");
+  const kingaku_label = kingaku_field_el.querySelector(".field__label");
+  const kingaku_note = kingaku_field_el.querySelector(".field__note");
+  const keigen_label = in_keigen.querySelector(".check__label");
+  const keigen_note = in_keigen.querySelector(".check__note");
+  const nashi_label = in_nashi.querySelector(".check__label");
+
+  const shurui_warn = h("div", {});
+  const keigen_field = h("div", { hidden: true }, in_keigen);
+  const kingaku_field = h("div", { hidden: true }, kingaku_field_el, in_nashi);
+  const result_area = h("div", { class: "result-area" });
+
+  const form = h("section", { class: "form" },
+    field("文書を作成した年月日", in_bi, "軽減措置が使えるかどうかは、この日で決まります"),
+    field("文書の種類", in_shurui, "どの号に当たるかの判定はこのツールでは行いません"),
+    shurui_warn,
+    keigen_field,
+    kingaku_field,
+  );
+
+  /** 選んだ号に合わせて、出す入力欄と文言を組み替える */
+  function apply_shurui() {
+    const bunsho = pick_bunsho(tables.inshizei, in_shurui.value);
+    const setting = nyuryoku_setting(bunsho, tables.inshizei_hyo);
+
+    shurui_warn.replaceChildren(bunsho["注意"] ? warn_line(bunsho["注意"]) : "");
+
+    // 軽減の対象でない号に切り替えたらチェックを外す（前の号のチェックが残ると誤った税額になる）
+    const keigen_ari = bunsho["軽減"] !== null;
+    if (!keigen_ari) in_keigen.input.checked = false;
+    keigen_field.hidden = !keigen_ari;
+    if (keigen_ari) {
+      keigen_label.textContent = bunsho["軽減のチェック文言"];
+      keigen_note.textContent = bunsho["軽減のチェック補足"];
+    }
+
+    kingaku_field.hidden = !setting["金額を使う"];
+    if (setting["金額を使う"]) {
+      kingaku_label.textContent = `${setting["金額の呼称"]}（円）`;
+      kingaku_note.textContent = bunsho["金額欄の補足"] ?? "";
+      kingaku_note.hidden = !bunsho["金額欄の補足"];
+      nashi_label.textContent = `${setting["金額の呼称"]}の記載がない`;
+    } else {
+      in_nashi.input.checked = false;
+    }
+    in_kingaku.disabled = in_nashi.input.checked;
+  }
+
+  function recalc() {
+    apply_shurui();
+    const input = {
+      sakusei_bi: in_bi.value,
+      key: in_shurui.value,
+      kingaku: Number(String(in_kingaku.value).replace(/[^0-9]/g, "") || 0),
+      kingaku_nashi: in_nashi.input.checked,
+      keigen_taisho: in_keigen.input.checked,
+    };
+    const r = calc_inshizei(input, tables);
+    if (!r.ok) {
+      result_area.replaceChildren(message_box(r.riyu));
+      return;
+    }
+    result_area.replaceChildren(...render_inshizei_result(r, input, tables));
+  }
+
+  for (const el of [in_bi, in_shurui, in_kingaku]) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+  in_nashi.input.addEventListener("change", recalc);
+  in_keigen.input.addEventListener("change", recalc);
+
+  root.replaceChildren(
+    page_title("印紙税", "契約書等に貼る収入印紙の額"),
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/** 区分の1行を「1,000万円超 5,000万円以下」のように表す */
+function kubun_hyoji(gyo) {
+  if (gyo["下限超"] === null) return `${format_en(gyo["上限以下"])}以下`;
+  if (gyo["上限以下"] === null) return `${format_en(gyo["下限超"])}超`;
+  return `${format_en(gyo["下限超"])}超 ${format_en(gyo["上限以下"])}以下`;
+}
+
+/** 印紙税の結果・計算過程・根拠を組み立てる */
+function render_inshizei_result(r, input, tables) {
+  const sakusei_bi = input.sakusei_bi;
+  const blocks = [];
+
+  if (r.keigen_kigen_gire) {
+    blocks.push(
+      warn_line(
+        `軽減措置は${format_hizuke(r.keigen["適用終了日"])}までです。` +
+          "この日より後に作成された文書のため本則で計算しました。" +
+          "延長されている場合は税額表の差し替えが必要です。",
+      ),
+    );
+  }
+
+  blocks.push(
+    result_card(
+      r.hikazei ? "印紙税" : `印紙税額（${r.tani}につき）`,
+      r.hikazei ? "非課税" : format_en(r.zeigaku),
+      [
+        { label: "文書の種類", value: `第${r.gou["号"]}号` },
+        { label: "適用する税率", value: r.tekiyo },
+        { label: "作成年月日", value: format_hizuke(sakusei_bi) },
+      ],
+    ),
+  );
+
+  const steps = [
+    {
+      label: "作成年月日",
+      value: format_hizuke(sakusei_bi),
+      note:
+        r.tekiyo === "軽減"
+          ? `軽減措置の適用期間内（${format_hizuke(r.keigen["適用開始日"])}から${format_hizuke(r.keigen["適用終了日"])}まで）`
+          : "本則の税率で計算しました",
+    },
+    {
+      label: "文書の種類",
+      value: `第${r.gou["号"]}号`,
+      note: r.kubun["見出し"] ?? r.bunsho["表示名"],
+    },
+  ];
+
+  if (r.kingaku_wo_tsukau) {
+    steps.push({
+      label: r.kingaku_no_yobisho,
+      value: input.kingaku_nashi ? "記載なし" : format_en(input.kingaku),
+      note: input.kingaku_nashi
+        ? "記載金額のない文書として判定しました"
+        : "消費税額等が区分記載されているときは、消費税額等を含めない金額です",
+    });
+  }
+
+  if (r.hikazei) {
+    steps.push({
+      label: "非課税の判定",
+      value: "非課税",
+      note: r.hikazei_riyu,
+    });
+  } else if (r.atehameta_gyo) {
+    steps.push({
+      label: "該当する区分",
+      value: kubun_hyoji(r.atehameta_gyo),
+      note:
+        r.tekiyo === "軽減"
+          ? "租税特別措置法91条の軽減税率表"
+          : `印紙税法 別表第一 第${r.gou["号"]}号`,
+    });
+  }
+
+  steps.push({
+    label: "印紙税額",
+    value: r.hikazei ? "0円（非課税）" : `${format_en(r.zeigaku)}（${r.tani}につき）`,
+    note: "印紙税に円未満・千円未満の端数処理はありません",
+  });
+
+  blocks.push(breakdown(steps));
+
+  // 手元の文書と突き合わせられるよう、条文の原文をそのまま出す
+  blocks.push(
+    note_block(
+      `課税物件（別表第一 第${r.gou["号"]}号 物件名）`,
+      r.gou["物件名"].split("\n"),
+    ),
+  );
+  if (r.gou["定義"]) {
+    blocks.push(note_block("定義（同 定義の欄）", r.gou["定義"].split("\n")));
+  }
+  if (r.gou["非課税物件"]) {
+    blocks.push(
+      note_block("非課税物件（同 非課税物件の欄）", r.gou["非課税物件"].split("\n")),
+    );
+  }
+
+  blocks.push(
+    note_block("この計算について", tables.inshizei["共通の注記"]),
+    note_block("このツールでは扱わないもの（要相談）", tables.inshizei["扱わないもの"]),
+    note_block("根拠", [
+      ...tables.inshizei["出典"].map((s) => s["名称"]),
+      `税額表の取得日：${format_hizuke(tables.inshizei_hyo["取得日"])}（${tables.inshizei_hyo["出典"]["印紙税法"]["最終改正"]}／${tables.inshizei_hyo["出典"]["租税特別措置法"]["最終改正"]}）`,
+      `その他の数値の最終確認日：${format_hizuke(tables.inshizei["最終確認日"])}`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ------------------------------------------------------------------ ルータ
 
 const ROUTES = {
   "/": render_menu,
   "/taishokukin": render_taishokukin,
   "/genka-shokyaku": render_genka_shokyaku,
+  "/inshizei": render_inshizei,
 };
 
 function route() {

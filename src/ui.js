@@ -81,6 +81,15 @@ export function number_input(opts = {}) {
   });
 }
 
+/** 日付の入力欄。値は "YYYY-MM-DD"（比較は文字列のまま行う） */
+export function date_input(value) {
+  return h("input", {
+    type: "date",
+    class: "input input--date",
+    value,
+  });
+}
+
 /** 選択欄 */
 export function select_input(options, selected) {
   return h("select", { class: "input input--select" },
