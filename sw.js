@@ -27,6 +27,14 @@ const SHELL = [
   "./icons/apple-touch-icon-180.png",
 ];
 
+// install のときに一緒に取り込む税率表。
+// ★初回訪問では service worker がまだページを制御しておらず、画面からの取得は
+//   ここを通らない。install で入れておかないと「1回開いてホーム画面に追加し、
+//   そのまま電波のない客先へ行った」端末で税率表だけ無い状態になる。
+// 計算メニューを増やすときは、ここにも足すこと（メニュー追加は開発者の作業なので、
+// 税務職員が data/ を差し替えるだけの改正でここを触る必要はない）。
+const DATA_FILES = ["./data/taishokukin.json", "./data/income_tax_rates.json"];
+
 const DATA_TIMEOUT_MS = 2000;
 
 self.addEventListener("install", (event) => {
@@ -38,6 +46,20 @@ self.addEventListener("install", (event) => {
       // 版を上げた直後10分以内に開いた端末が「新しい版名のキャッシュに古い中身」を抱え、
       // cache-first なので次の版まで直らない。
       await cache.addAll(SHELL.map((url) => new Request(url, { cache: "reload" })));
+
+      // 税率表も入れておく。取れなくても install は失敗させない（後で network-first が拾う）
+      const data_cache = await open_data_cache();
+      await Promise.all(
+        DATA_FILES.map(async (url) => {
+          try {
+            const res = await fetch(new Request(url, { cache: "reload" }));
+            if (res.ok) await data_cache.put(url, res);
+          } catch {
+            // 通信できない状態での install。次に開いたときに取りに行く
+          }
+        }),
+      );
+
       // 待たせずに新しい版へ切り替える（客先で古い版が残らないようにする）
       await self.skipWaiting();
     })(),
