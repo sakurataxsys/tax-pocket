@@ -1,14 +1,14 @@
 // 税額ポケット の service worker
 //
 // キャッシュを2系統に分ける（判断ログ D-16）
-//   アプリシェル … 版付きの cache-first。客先での起動を最速にする
+//   アプリシェル … 版付きの cache-first。関与先での起動を最速にする
 //   data/*.json  … network-first（2秒で打ち切り）→ 失敗したら端末のキャッシュ
 //                  税率表を差し替えたその日に反映させるため
 //
 // ★ロジック（src/ 配下）を変更したら CACHE_VERSION を上げること。
 //   data/*.json を差し替えるだけの改正では上げる必要はない（network-first のため）。
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
@@ -31,7 +31,7 @@ const SHELL = [
 // install のときに一緒に取り込む税率表。
 // ★初回訪問では service worker がまだページを制御しておらず、画面からの取得は
 //   ここを通らない。install で入れておかないと「1回開いてホーム画面に追加し、
-//   そのまま電波のない客先へ行った」端末で税率表だけ無い状態になる。
+//   そのまま電波のない関与先へ行った」端末で税率表だけ無い状態になる。
 // 計算メニューを増やすときは、ここにも足すこと（メニュー追加は開発者の作業なので、
 // 税務職員が data/ を差し替えるだけの改正でここを触る必要はない）。
 const DATA_FILES = [
@@ -66,7 +66,7 @@ self.addEventListener("install", (event) => {
         }),
       );
 
-      // 待たせずに新しい版へ切り替える（客先で古い版が残らないようにする）
+      // 待たせずに新しい版へ切り替える（関与先で古い版が残らないようにする）
       await self.skipWaiting();
     })(),
   );

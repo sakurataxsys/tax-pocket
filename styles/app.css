@@ -164,7 +164,7 @@ main {
 .input--money, .input--number { text-align: right; }
 .input--select { text-align: left; appearance: none; }
 
-/* number 入力のスピナーは客先での誤操作のもとなので消す */
+/* number 入力のスピナーは関与先での誤操作のもとなので消す */
 .input--number::-webkit-outer-spin-button,
 .input--number::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .input--number { -moz-appearance: textfield; }

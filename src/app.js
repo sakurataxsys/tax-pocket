@@ -50,7 +50,7 @@ const MENU = [
 function render_menu() {
   back_link.hidden = true;
   root.replaceChildren(
-    page_title("税額ポケット", "客先で使う税額計算ツール"),
+    page_title("税額ポケット", "関与先で使う税額計算ツール"),
     h("nav", { class: "menu" },
       MENU.map((m) =>
         m.ready

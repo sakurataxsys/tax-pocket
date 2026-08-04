@@ -1,7 +1,7 @@
 {
   "name": "税額ポケット",
   "short_name": "税額ポケット",
-  "description": "客先で使う税額計算ツール",
+  "description": "関与先で使う税額計算ツール",
   "lang": "ja",
   "dir": "ltr",
   "start_url": "./",
