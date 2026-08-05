@@ -76,6 +76,7 @@ npm test              テスト（依存パッケージなし。Node の標準�
 node tools/serve.mjs  http://localhost:8080/ で配信（service worker は file:// では動かない）
 
 node tools/fetch_shokyakuritsu.mjs   減価償却の償却率表を耐用年数省令の別表から作り直す
+node tools/build_tejunsho_pdf.mjs    配布手順書の PDF を HTML から起こす（出力は ClaudeDocument/output）
 ```
 
 **`src/` のロジックを変えたら版を上げること。** 上げる場所は2つで、同じ値にする。

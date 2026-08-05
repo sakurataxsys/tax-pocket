@@ -127,13 +127,28 @@
     line-height: 1.8;
   }
 
+  /* 紙はA4。PDF は Chrome の印刷機能で起こす（tools/build_tejunsho_pdf.mjs） */
+  @page { size: A4; margin: 16mm 15mm 14mm; }
+
   @media print {
     body { padding: 0; font-size: 10.5pt; line-height: 1.75; }
     .sheet { max-width: none; }
-    section { margin-bottom: 1.6rem; page-break-inside: avoid; }
+    /* ★節ごと改ページ禁止にしない。長い節がまるごと次ページへ送られ、
+       前のページの下半分が空白になる（5ページに膨らんだ原因） */
+    section { margin-bottom: 1.4rem; }
+    /* 送らせないのは、途中で割れると読めなくなる小さい塊だけ */
+    .keep, .note, ol, ul { break-inside: avoid; }
+    /* 見出しだけがページ末に取り残されないようにする */
+    h1, h2, h3 { break-after: avoid; }
     h1 { font-size: 17pt; }
-    h2 { font-size: 12pt; margin-bottom: .6rem; }
-    .lead { margin-bottom: 1.6rem; }
+    h2 { font-size: 12pt; margin: 0 0 .6rem; }
+    h3 { margin: 1.1rem 0 .4rem; }
+    p { margin-bottom: .7rem; }
+    .lead { margin-bottom: 1.4rem; }
+    .keep { margin: 1rem 0; padding: .9rem 1.1rem; }
+    .note { margin: 1rem 0; }
+    .reason { margin-bottom: .9rem; }
+    footer { margin-top: 1.8rem; padding-top: 1rem; }
     .keep, .url { box-shadow: none; border: 1pt solid #d5d8de; }
     a { color: inherit; text-decoration: none; }
   }
