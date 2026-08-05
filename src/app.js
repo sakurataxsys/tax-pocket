@@ -7,14 +7,22 @@ import {
   load_taishokukin_tables,
   load_genka_shokyaku_tables,
   load_inshizei_tables,
+  load_toroku_menkyozei_tables,
   load_entaizei_tables,
 } from "./data.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
 import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
+import {
+  calc_toroku_menkyozei,
+  leaf_groups,
+  pick_leaf,
+  keigen_for_leaf,
+} from "./calc/toroku_menkyozei.js";
 import { calc_entaizei, needs_kikan_tokurei_chui } from "./calc/entaizei.js";
 import {
   format_en,
+  format_number,
   format_nenbun,
   format_nen,
   format_ritsu,
@@ -27,6 +35,7 @@ import {
   money_input,
   number_input,
   select_input,
+  select_group_input,
   date_input,
   check_input,
   result_card,
@@ -54,7 +63,12 @@ const MENU = [
     desc: "契約書等の記載金額から",
     ready: true,
   },
-  { name: "登録免許税", desc: "登記の種類・課税標準から", ready: false },
+  {
+    path: "#/toroku-menkyozei",
+    name: "登録免許税",
+    desc: "登記の種類・課税標準から",
+    ready: true,
+  },
   {
     path: "#/entaizei",
     name: "延滞税・利子税",
@@ -939,6 +953,340 @@ function render_entaizei_result(r, input, tables) {
   return blocks;
 }
 
+// ------------------------------------------------------------ 登録免許税画面
+
+async function render_toroku_menkyozei() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let tables;
+  try {
+    tables = await load_toroku_menkyozei_tables();
+  } catch {
+    root.replaceChildren(
+      page_title("登録免許税"),
+      message_box(
+        "税額表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+  const setting = tables.toroku_menkyozei;
+  const hyo = tables.toroku_menkyozei_hyo;
+
+  const in_bi = date_input(today_iso());
+  const in_gou = select_input(
+    hyo["号"].map((g) => ({
+      value: String(g["号"]),
+      label: `第${g["号"]}号　${g["見出し"].split("\n")[0].split("　").slice(1).join("　").slice(0, 20)}`,
+    })),
+    "1",
+  );
+  const in_shurui = select_group_input();
+  const in_hojin = select_input(
+    setting["二値定額の区分"]["選択肢"].map((o) => ({ value: o.value, label: o.label })),
+    "会社",
+  );
+  const in_kingaku = money_input({ placeholder: "0" });
+  const in_suryo = number_input({ min: 1, value: 1 });
+  const in_keigen = select_input([{ value: "", label: "なし（本則で計算）" }], "");
+  const in_shutoku = date_input(today_iso());
+
+  const kingaku_field = field("課税標準（円）", in_kingaku, "―");
+  const kingaku_label = kingaku_field.querySelector(".field__label");
+  const kingaku_note = kingaku_field.querySelector(".field__note");
+  const suryo_field = field("数量", in_suryo, "―");
+  const suryo_label = suryo_field.querySelector(".field__label");
+  const suryo_note = suryo_field.querySelector(".field__note");
+  const hojin_field = field(setting["二値定額の区分"]["見出し"], in_hojin, setting["二値定額の区分"]["補足"]);
+  const keigen_field = field("軽減の適用", in_keigen, "―");
+  const keigen_note = keigen_field.querySelector(".field__note");
+  const shutoku_field = field("住宅用家屋を新築・取得した日", in_shutoku, "―");
+  const shutoku_note = shutoku_field.querySelector(".field__note");
+
+  const kingaku_wrap = h("div", { hidden: true }, kingaku_field);
+  const suryo_wrap = h("div", { hidden: true }, suryo_field);
+  const hojin_wrap = h("div", { hidden: true }, hojin_field);
+  const keigen_wrap = h("div", { hidden: true }, keigen_field);
+  const shutoku_wrap = h("div", { hidden: true }, shutoku_field);
+  const shurui_warn = h("div", {});
+  const result_area = h("div", { class: "result-area" });
+
+  const form = h("section", { class: "form" },
+    field("登記を受ける日", in_bi, "軽減措置が使えるかどうかは、この日または新築・取得の日で決まります"),
+    field("登記の区分", in_gou, "扱うのは不動産の登記と会社の商業登記だけです"),
+    field("登記の種類", in_shurui, "別表第一の区分をそのまま出しています"),
+    shurui_warn,
+    hojin_wrap,
+    kingaku_wrap,
+    suryo_wrap,
+    keigen_wrap,
+    shutoku_wrap,
+  );
+
+  /** 選んだ号に合わせて、登記の種類の選択肢を入れ替える */
+  function fill_shurui(keep) {
+    const gou = hyo["号"].find((g) => String(g["号"]) === in_gou.value);
+    const groups = leaf_groups(gou).map((grp) => ({
+      見出し: grp["見出し"].slice(0, 30),
+      options: grp["葉"].map((l) => ({
+        value: l["パス"],
+        // ラベルは第1段を optgroup 側に出しているので、ここは残りの階層と名称
+        label: `${l["パス"].replace(/^第\d+号/, "").replace(grp["見出し"].split("　")[0], "")}　${l["名称"]}`
+          .replace(/^　+/, "")
+          .slice(0, 60),
+      })),
+    }));
+    const all = groups.flatMap((g) => g.options.map((o) => o.value));
+    const selected = keep && all.includes(keep) ? keep : all[0];
+    in_shurui.fill(groups, selected);
+    in_shurui.value = selected;
+  }
+
+  /** 選んだ登記に合わせて、出す入力欄と文言を組み替える */
+  function apply_shurui() {
+    const found = pick_leaf(hyo, in_shurui.value);
+    if (!found) return null;
+    const ha = found["葉"];
+    const ritsu = ha["税率"];
+
+    const chui = setting["葉ごとの注意"][ha["パス"]] ?? [];
+    shurui_warn.replaceChildren(...chui.map((t) => warn_line(t)));
+
+    const is_teigaku = ritsu["種別"] === "定額" || ritsu["種別"] === "二値定額";
+    const is_niti = ritsu["種別"] === "二値定額";
+    // 二値定額で「会社」を選んだときだけ資本金の額を聞く
+    const kaisha = is_niti && in_hojin.value === "会社";
+    const kingaku_iru = ritsu["種別"] === "定率" || kaisha;
+
+    hojin_wrap.hidden = !is_niti;
+    kingaku_wrap.hidden = !kingaku_iru;
+    suryo_wrap.hidden = !is_teigaku;
+
+    if (kingaku_iru) {
+      kingaku_label.textContent = `${ha["課税標準"]}（円）`;
+      const hosoku = setting["課税標準の補足"][ha["課税標準"]] ?? "";
+      kingaku_note.textContent = hosoku;
+      kingaku_note.hidden = hosoku === "";
+    }
+    if (is_teigaku) {
+      suryo_label.textContent = ha["課税標準"];
+      suryo_note.textContent =
+        ha["但書"] && ha["但書"]["種別"] === "個数超過の別建て"
+          ? `この計算は申請書1件分です。${ha["但書"]["原文"]}`
+          : "この計算は申請書1件分です";
+    }
+
+    // 軽減。対象でない登記に切り替えたら選択を戻す（前の選択が残ると誤った税額になる）
+    const kouho = keigen_for_leaf(setting, ha["パス"]);
+    keigen_wrap.hidden = kouho.length === 0;
+    if (kouho.length === 0) {
+      in_keigen.value = "";
+      shutoku_wrap.hidden = true;
+    } else {
+      const cur = kouho.some((k) => k["キー"] === in_keigen.value) ? in_keigen.value : "";
+      in_keigen.replaceChildren(
+        h("option", { value: "" }, "なし（本則で計算）"),
+        ...kouho.map((k) => h("option", { value: k["キー"] }, k["選択肢の文言"])),
+      );
+      in_keigen.value = cur;
+      const erabu = kouho.find((k) => k["キー"] === cur);
+      keigen_note.textContent = erabu ? erabu["補足"] : "対象かどうかは条文で確認してください";
+      const shutoku_iru = erabu?.["期間の判定日"] === "新築・取得の日";
+      shutoku_wrap.hidden = !shutoku_iru;
+      if (shutoku_iru) shutoku_note.textContent = erabu["1年以内の注意"];
+    }
+    return ha;
+  }
+
+  function recalc() {
+    const ha = apply_shurui();
+    const input = {
+      toki_bi: in_bi.value,
+      path: in_shurui.value,
+      kingaku: Number(String(in_kingaku.value).replace(/[^0-9]/g, "") || 0),
+      suryo: Number(in_suryo.value || 0),
+      keigen_key: in_keigen.value || null,
+      shutoku_bi: shutoku_wrap.hidden ? null : in_shutoku.value,
+      hojin_kubun: in_hojin.value,
+    };
+    const r = calc_toroku_menkyozei(input, tables);
+    if (!r.ok) {
+      result_area.replaceChildren(
+        message_box(r.riyu),
+        ...(r["原文"] ? [note_block("税率欄の原文", [r["原文"]])] : []),
+      );
+      return;
+    }
+    result_area.replaceChildren(...render_toroku_result(r, input, tables, ha));
+  }
+
+  in_gou.addEventListener("change", () => {
+    fill_shurui(null);
+    recalc();
+  });
+  for (const el of [in_bi, in_shurui, in_hojin, in_kingaku, in_suryo, in_keigen, in_shutoku]) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+
+  fill_shurui(null);
+  root.replaceChildren(
+    page_title("登録免許税", "不動産の登記と会社の商業登記"),
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/** 「千分の四（4/1000）」のように税率を表す */
+function ritsu_hyoji(ritsu) {
+  return `${ritsu["原文"]}（${ritsu["分子"]}/${ritsu["分母"]}）`;
+}
+
+/** 軽減が効かなかったときの1行 */
+function keigen_keikoku_bun(w) {
+  if (w["種別"] === "期限後") {
+    return (
+      `${w["根拠"]}の軽減は${format_hizuke(w["適用終了日"])}までです。` +
+      "この日より後のため本則で計算しました。延長されている場合は税額表の差し替えが必要です。"
+    );
+  }
+  if (w["種別"] === "開始前") {
+    return `${w["根拠"]}の軽減は${format_hizuke(w["適用開始日"])}からです。本則で計算しました。`;
+  }
+  return `${w["根拠"]}の軽減は判定できませんでした。${w["理由"] ?? ""}`;
+}
+
+/** 登録免許税の結果・計算過程・根拠を組み立てる */
+function render_toroku_result(r, input, tables, ha) {
+  const setting = tables.toroku_menkyozei;
+  const hyo = tables.toroku_menkyozei_hyo;
+  const blocks = [];
+
+  if (r["軽減の警告"]) blocks.push(warn_line(keigen_keikoku_bun(r["軽減の警告"])));
+  if (r["一年の警告"]) blocks.push(warn_line(r["一年の警告"]));
+
+  blocks.push(
+    result_card("登録免許税額", format_en(r["税額"]), [
+      { label: "登記の種類", value: `${r["葉"]["パス"]}` },
+      {
+        label: "適用する税率",
+        value: r["種別"] === "定率" ? `${r["適用"]}　${ritsu_hyoji(r["税率"])}` : r["葉"]["税率"]["原文"],
+      },
+      { label: "登記を受ける日", value: format_hizuke(input.toki_bi) },
+    ]),
+  );
+
+  const steps = [
+    {
+      label: "登記の種類",
+      value: r["葉"]["パス"],
+      note: r["葉"]["名称"],
+    },
+  ];
+
+  if (r["種別"] === "定率") {
+    steps.push({
+      label: r["葉"]["課税標準"],
+      value: format_en(r["課税標準"]),
+      note: r["課税標準を千円にした"]
+        ? `入力額 ${format_en(input.kingaku)} は全額が千円未満のため千円とします（登録免許税法15条）`
+        : `入力額 ${format_en(input.kingaku)} の千円未満を切り捨て（国税通則法118条1項）`,
+    });
+    if (r["適用"] === "軽減") {
+      steps.push({
+        label: "適用する軽減",
+        value: r["軽減"]["根拠"],
+        note:
+          `${format_hizuke(r["軽減の定義"]["適用開始日"])}から${format_hizuke(r["軽減の定義"]["適用終了日"])}まで` +
+          `／${r["軽減"]["期間の判定日"]}（${format_hizuke(r["軽減の判定日"])}）で判定`,
+      });
+    }
+    steps.push({
+      label: "税率",
+      value: ritsu_hyoji(r["税率"]),
+      note: r["適用"] === "軽減" ? "租税特別措置法の軽減税率" : "登録免許税法 別表第一の税率",
+    });
+    steps.push({
+      label: "税額",
+      value: format_en(r["百円未満切捨て後"]),
+      note:
+        `${format_number(r["課税標準"])} × ${r["税率"]["分子"]}/${r["税率"]["分母"]} = ` +
+        `${format_number(r["計算額"])}円 の百円未満を切り捨て（国税通則法119条1項）`,
+    });
+    if (r["最低税額の適用"] === "但書") {
+      steps.push({
+        label: "最低税額",
+        value: format_en(r["税額"]),
+        note: r["葉"]["但書"]["原文"],
+      });
+    } else if (r["最低税額の適用"] === "登免法19条") {
+      steps.push({
+        label: "最低税額",
+        value: format_en(r["税額"]),
+        note: "税率を適用して計算した金額が千円に満たないため千円とします（登録免許税法19条）",
+      });
+    }
+  } else {
+    if (r["区分の理由"]) {
+      steps.push({
+        label: setting["二値定額の区分"]["見出し"],
+        value: setting["二値定額の区分"]["選択肢"].find((o) => o.value === input.hojin_kubun)?.label ?? "―",
+        note: r["区分の理由"],
+      });
+    }
+    steps.push({
+      label: "単価",
+      value: `${format_en(r["単価"])}（${r["葉"]["税率"]["単位"]}につき）`,
+      note: r["葉"]["税率"]["原文"],
+    });
+    steps.push({
+      label: r["葉"]["課税標準"],
+      value: `${format_number(r["数量"])}`,
+      note: "この計算は申請書1件分です",
+    });
+    if (r["但書の適用"]) {
+      steps.push({
+        label: "但書の適用",
+        value: format_en(r["税額"]),
+        note: `${r["但書の適用"]["原文"]}　※最低税額ではなく別建ての額のため、単価×数量ではなくこの額になります`,
+      });
+    } else {
+      steps.push({
+        label: "税額",
+        value: format_en(r["税額"]),
+        note: `${format_number(r["単価"])} × ${format_number(r["数量"])}　定額課税に端数処理はありません`,
+      });
+    }
+  }
+
+  blocks.push(breakdown(steps));
+
+  // 手元の登記と突き合わせられるよう、別表の原文をそのまま出す
+  blocks.push(
+    note_block(`別表第一 ${r["葉"]["パス"]}`, [
+      r["葉"]["名称"],
+      `課税標準：${r["葉"]["課税標準"]}`,
+      `税率：${r["葉"]["税率"]["原文"]}`,
+      ...(r["葉"]["但書"] ? [`但書：${r["葉"]["但書"]["原文"]}`] : []),
+    ]),
+    note_block(`第${r["号"]["号"]}号の範囲`, r["号"]["見出し"].split("\n")),
+  );
+
+  blocks.push(
+    note_block("この計算について", setting["共通の注記"]),
+    note_block("このツールでは扱わないもの（要相談）", setting["扱わないもの"]),
+    note_block("根拠", [
+      ...setting["出典"].map((s) => s["名称"]),
+      `税額表の取得日：${format_hizuke(hyo["取得日"])}（${hyo["出典"]["登録免許税法"]["最終改正"]}／${hyo["出典"]["租税特別措置法"]["最終改正"]}）`,
+      `その他の文言の最終確認日：${format_hizuke(setting["最終確認日"])}`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ------------------------------------------------------------------ ルータ
 
 const ROUTES = {
@@ -946,6 +1294,7 @@ const ROUTES = {
   "/taishokukin": render_taishokukin,
   "/genka-shokyaku": render_genka_shokyaku,
   "/inshizei": render_inshizei,
+  "/toroku-menkyozei": render_toroku_menkyozei,
   "/entaizei": render_entaizei,
 };
 

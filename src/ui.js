@@ -99,6 +99,27 @@ export function select_input(options, selected) {
   );
 }
 
+/**
+ * グループ分けした選択欄（optgroup つき）。
+ * 中身を入れ替える `fill` を持たせる。選択肢が数十件あり、
+ * 上位の選択（登録免許税の号）で総入れ替えになる画面で使う。
+ */
+export function select_group_input() {
+  const sel = h("select", { class: "input input--select" });
+  sel.fill = (groups, selected) => {
+    sel.replaceChildren(
+      ...groups.map((g) =>
+        h("optgroup", { label: g.見出し },
+          g.options.map((o) =>
+            h("option", { value: o.value, selected: String(o.value) === String(selected) }, o.label),
+          ),
+        ),
+      ),
+    );
+  };
+  return sel;
+}
+
 /** チェック欄（タップ範囲を広く取る） */
 export function check_input(label_text, note) {
   const box = h("input", { type: "checkbox", class: "check__box" });

@@ -50,7 +50,8 @@
 | `taishokukin.json`（作成済み） | 退職所得控除の単価・短期退職手当等の設定・住民税率 | 改正時のみ |
 | `inshizei_hyo.json`（作成済み・**自動生成**） | 別表第一の全20号（原文・区分・税額・非課税しきい値）と措置法91条の軽減税率表 | 改正時のみ |
 | `inshizei.json`（作成済み） | 画面に出す文書名・注記・非課税を自動判定してよい号・収録開始日 | 改正時のみ |
-| 登録免許税の税率表 | 登記の種類別の税率 | 改正時のみ |
+| `toroku_menkyozei_hyo.json`（作成済み・**自動生成**） | 別表第一の第1号・第24号（階層・課税標準・税率・但書）と措置法の軽減4条文 | 改正時のみ |
+| `toroku_menkyozei.json`（作成済み） | 画面に出す文言・軽減の紐づけ・葉ごとの注意・収録開始日 | 改正時のみ |
 | `entaizei.json`（作成済み） | 延滞税・利子税の年別の割合 | **毎年** |
 | `shokyakuritsu.json`（作成済み・**自動生成**） | 定額法・定率法の償却率／改定償却率／保証率 | ほぼ動かない |
 | `genka_shokyaku.json`（作成済み） | 中古資産の簡便法・少額減価償却資産のしきい値・備忘価額 | 改正時のみ |
@@ -62,14 +63,15 @@
 
 ### 例外：自動生成しているファイルは手で編集しない
 
-次の2つは**条文から機械的に生成**している。人が転記すると必ずどこかを間違え、
-しかも画面には**もっともらしい結果が出てしまう**ため（判断ログ D-18・D-20）。
+次の3つは**条文から機械的に生成**している。人が転記すると必ずどこかを間違え、
+しかも画面には**もっともらしい結果が出てしまう**ため（判断ログ D-18・D-20・D-22）。
 
 改正があったら、編集ではなく再生成する：
 
 ```
-node tools/fetch_shokyakuritsu.mjs   # shokyakuritsu.json（耐用年数省令の別表第八〜第十／約900個の数値）
-node tools/fetch_inshizei.mjs        # inshizei_hyo.json（印紙税法別表第一の全20号／措置法91条）
+node tools/fetch_shokyakuritsu.mjs      # shokyakuritsu.json（耐用年数省令の別表第八〜第十／約900個の数値）
+node tools/fetch_inshizei.mjs           # inshizei_hyo.json（印紙税法別表第一の全20号／措置法91条）
+node tools/fetch_toroku_menkyozei.mjs   # toroku_menkyozei_hyo.json（登録免許税法別表第一の第1号・第24号／措置法72条・72条の2・73条・75条）
 npm test
 ```
 

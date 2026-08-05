@@ -37,6 +37,15 @@ export async function load_entaizei_tables() {
   return { entaizei };
 }
 
+/** 登録免許税の計算に必要なデータをまとめて読む */
+export async function load_toroku_menkyozei_tables() {
+  const [toroku_menkyozei, toroku_menkyozei_hyo] = await Promise.all([
+    load_data("toroku_menkyozei"),
+    load_data("toroku_menkyozei_hyo"),
+  ]);
+  return { toroku_menkyozei, toroku_menkyozei_hyo };
+}
+
 /** 印紙税の計算に必要なデータをまとめて読む */
 export async function load_inshizei_tables() {
   const [inshizei, inshizei_hyo] = await Promise.all([
