@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>税額ポケット 使い方</title>
+<!--
+  配布用の手順書。内容の正本は docs/配布手順書.md（片方だけ直さないこと）。
+  見た目は内部ツール4原則（余白を取る／白と薄いグレー／差し色は1色／罫線で囲わない）。
+  事務所名・ロゴ・ブランド配色は入れない（CLAUDE.md 設計原則5）。
+  紙で配ることを想定して印刷用の指定を置く。
+-->
+<style>
+  :root {
+    --ink: #10121d;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --bg: #ffffff;
+    --bg-subtle: #f6f7f9;
+    --shadow: 0 1px 3px rgba(16, 18, 29, .06), 0 8px 24px rgba(16, 18, 29, .04);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 4rem 1.5rem 6rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI",
+                 "Noto Sans JP", "Meiryo", sans-serif;
+    font-size: 16px;
+    line-height: 1.9;
+    font-feature-settings: "palt";
+  }
+  .sheet { max-width: 46rem; margin: 0 auto; }
+
+  h1 { margin: 0 0 .5rem; font-size: 2rem; font-weight: 700; letter-spacing: .01em; }
+  .lead { margin: 0 0 4rem; color: var(--muted); font-size: .9375rem; }
+
+  section { margin: 0 0 3.5rem; }
+  h2 {
+    margin: 0 0 1.25rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: .01em;
+  }
+  h2 .num {
+    display: inline-block;
+    min-width: 1.6rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  h3 {
+    margin: 2.25rem 0 .75rem;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  p { margin: 0 0 1rem; }
+  strong { font-weight: 600; }
+
+  .url {
+    display: block;
+    margin: 1.25rem 0;
+    padding: 1rem 1.25rem;
+    background: var(--bg-subtle);
+    border-radius: .75rem;
+    color: var(--accent);
+    font-size: 1.0625rem;
+    text-decoration: none;
+    word-break: break-all;
+  }
+
+  ol, ul { margin: 0 0 1rem; padding-left: 1.5rem; }
+  li { margin: 0 0 .5rem; }
+  ol { counter-reset: none; }
+
+  .muted { color: var(--muted); font-size: .875rem; }
+
+  /* 読み飛ばしてほしくない一段。罫線で囲わず、薄い面と余白で立てる */
+  .keep {
+    margin: 1.75rem 0;
+    padding: 1.5rem 1.75rem;
+    background: var(--bg-subtle);
+    border-radius: .875rem;
+    box-shadow: var(--shadow);
+  }
+  .keep p:last-child { margin-bottom: 0; }
+  .keep__label {
+    display: block;
+    margin: 0 0 .5rem;
+    color: var(--accent);
+    font-size: .8125rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+
+  .note {
+    margin: 1.5rem 0;
+    padding-left: 1.25rem;
+    box-shadow: inset 3px 0 0 rgba(37, 99, 235, .25);
+    color: var(--muted);
+    font-size: .9375rem;
+  }
+  .note p:last-child { margin-bottom: 0; }
+
+  .reasons { margin: 1.5rem 0; }
+  .reason { margin: 0 0 1.5rem; }
+  .reason__head { display: block; font-weight: 600; margin-bottom: .25rem; }
+
+  .menu-list {
+    margin: 1.25rem 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: .9375rem;
+  }
+  .menu-list li { display: inline; }
+  .menu-list li::after { content: " ／ "; }
+  .menu-list li:last-child::after { content: ""; }
+
+  footer {
+    margin: 5rem 0 0;
+    padding-top: 2rem;
+    box-shadow: inset 0 1px 0 rgba(16, 18, 29, .08);
+    color: var(--muted);
+    font-size: .8125rem;
+    line-height: 1.8;
+  }
+
+  @media print {
+    body { padding: 0; font-size: 10.5pt; line-height: 1.75; }
+    .sheet { max-width: none; }
+    section { margin-bottom: 1.6rem; page-break-inside: avoid; }
+    h1 { font-size: 17pt; }
+    h2 { font-size: 12pt; margin-bottom: .6rem; }
+    .lead { margin-bottom: 1.6rem; }
+    .keep, .url { box-shadow: none; border: 1pt solid #d5d8de; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<h1>税額ポケット 使い方</h1>
+<p class="lead">関与先で税額を出すための計算ツールです。スマートフォンで使います。</p>
+
+<section>
+  <h2><span class="num">1</span>これは何か</h2>
+  <p>スマートフォンのブラウザで開き、<strong>ホーム画面に追加して</strong>使います。</p>
+  <a class="url" href="https://sakurataxsys.github.io/tax-pocket/">https://sakurataxsys.github.io/tax-pocket/</a>
+  <p class="muted">いま入っているもの</p>
+  <ul class="menu-list">
+    <li>退職金</li><li>減価償却費</li><li>印紙税</li><li>登録免許税</li>
+    <li>延滞税・利子税</li><li>法人税の早見表</li><li>リンク集</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">2</span>最初に1回だけ：ホーム画面に追加する</h2>
+  <p><strong>ここは必ずやってください。</strong>追加しないと、電波の届かない関与先で使えなくなることがあります（理由は3.）。</p>
+
+  <h3>iPhone・iPad の場合</h3>
+  <ol>
+    <li><strong>Safari</strong> で上のURLを開く</li>
+    <li>画面下の共有ボタン（□から↑が出ているマーク）を押す</li>
+    <li>メニューを下にたどって <strong>「ホーム画面に追加」</strong> を押す</li>
+    <li>名前が <strong>「税額ポケット」</strong> になっていることを確認して「追加」</li>
+  </ol>
+  <p class="muted">Edge や Chrome の共有メニューからも追加できます（iOS 16.4 以降）。どれで追加しても構いません。</p>
+
+  <h3>Android の場合</h3>
+  <ol>
+    <li><strong>Chrome</strong> で上のURLを開く</li>
+    <li>右上の <strong>︙</strong>（縦3つの点）を押す</li>
+    <li><strong>「ホーム画面に追加」</strong>（または「アプリをインストール」）を押す</li>
+    <li>「追加」を押す</li>
+  </ol>
+
+  <div class="keep">
+    <span class="keep__label">追加したら、続けてこれをやってください</span>
+    <p>ホーム画面のアプリは、ブラウザとは<strong>別々にデータを持ちます</strong>（理由は3.）。<strong>ブラウザで見ておいても、アイコンのアプリ側に入っているとは限りません。</strong></p>
+    <p>追加したら必ず<strong>アイコンから開き直して</strong>、メニューを上から順に1回ずつ表示してください。30秒で終わります。これをやった端末は、電波のない場所でも確実に動きます。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">3</span>なぜホーム画面に追加が必要か</h2>
+  <p>理由は2つあります。どちらも Apple の公式資料で確認しています。</p>
+
+  <div class="reasons">
+    <div class="reason">
+      <span class="reason__head">① ホーム画面のアプリは、ブラウザとデータが別々です。</span>
+      <p>Apple の資料に「ホーム画面のWebアプリは、ブラウザとは別のクッキーとストレージを持つ」とあります。そのため、ブラウザで開いて見ておいても、<strong>アイコンのアプリ側に入っているとは限りません。</strong>追加したあとに、アイコンから開いて各メニューを1回ずつ表示してください。</p>
+    </div>
+    <div class="reason">
+      <span class="reason__head">② ブラウザのままだと、しばらく使わない間に保存データが消えます。</span>
+      <p>Safari は、7日間使わなかったサイトの保存データを自動的に削除します。</p>
+    </div>
+  </div>
+
+  <p>つまりホーム画面への追加は「アイコンから開けて便利」という話ではなく、<strong>電波が届かない場所でも動かすための条件</strong>です。ブックマークやお気に入りに入れただけでは、この効果はありません。</p>
+</section>
+
+<section>
+  <h2><span class="num">4</span>使い方</h2>
+  <ol>
+    <li>アイコンから開く</li>
+    <li>メニューから計算したいものを選ぶ</li>
+    <li>金額などを入れると、その場で結果が出る（「計算」ボタンを押す必要はありません）</li>
+    <li>別の計算をするときは、左上の <strong>「メニュー」</strong> から戻る</li>
+  </ol>
+  <div class="note">
+    <p><strong>開きっぱなしにしていたときは、いったんメニューへ戻って入り直してください。</strong>税率表は、メニューから計算画面に入るたびに最新を取りに行く作りです。朝に開いたまま夕方に使うと、その日の差し替えが反映されていないことがあります。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">5</span>電波がないところで使う</h2>
+  <p><strong>アイコンから開いて各メニューを1回ずつ表示してあれば、電波がなくても計算できます。</strong></p>
+  <p>はじめて使う端末は、<strong>事務所を出る前に</strong>、ホーム画面のアイコンから開いて各メニューを1回ずつ表示してください（2. の最後と同じことです。ブラウザで見ただけでは足りません）。</p>
+</section>
+
+<section>
+  <h2><span class="num">6</span>税制改正が反映されたときの知らせ方</h2>
+  <p>税率や金額が変わったときは、<strong>Teams の「税額ポケット」チャネルに投稿します。</strong></p>
+  <p><strong>自分の端末に反映されているかは、メニューの「更新の確認」で確かめられます。</strong>お知らせに書いてある<strong>数値表の名前と日付</strong>を、この画面の同じ行と見比べてください。同じなら反映済みです。</p>
+
+  <div class="note">
+    <p><strong>お知らせに書いてある日付は、投稿した日ではありません。</strong>数値表そのものに書かれている日付（アプリの画面に出ているのと同じもの）です。「8月10日に更新しました」ではなく「延滞税・利子税の割合 → 2026年8月10日」の形で書きます。</p>
+  </div>
+
+  <p>日付が古いままのとき</p>
+  <ol>
+    <li><strong>通信できる場所で</strong>「更新の確認」をもう一度開く</li>
+    <li>それでも変わらないときは、アプリをいったん閉じて開き直す</li>
+    <li>なお直らないときは Teams のチャネルに書いてください（端末側の不具合の可能性があります）</li>
+  </ol>
+
+  <div class="keep">
+    <span class="keep__label">メニューに「更新の確認」が見当たらないとき</span>
+    <p>その端末が古いままです。アプリをいったん閉じて、通信できる場所で開き直してください。</p>
+  </div>
+
+  <h3>計算のしかたが変わったとき（アプリの版）</h3>
+  <p>税率表の差し替えではなく、計算そのものを直したときは、お知らせに「<strong>アプリの版：v10</strong>」のように書きます。このときは<strong>アプリをいったん閉じて開き直してから</strong>、「更新の確認」の一番上に出ている版を見比べてください。</p>
+  <p>数値表の日付だけが新しくて版が古い場合、<strong>古い計算のしかたで新しい数値を使っている</strong>状態です。</p>
+</section>
+
+<section>
+  <h2><span class="num">7</span>使うときの注意</h2>
+  <ul>
+    <li><strong>計算結果は概算です。</strong>申告その他の税務判断の根拠には使えません</li>
+    <li><strong>入力した金額は端末の外に出ません</strong>（どこのサーバーにも送っていません）。ただし関与先では画面の見え方に配慮してください</li>
+    <li><strong>相続税の概算・ふるさと納税は、まだ入っていません</strong></li>
+    <li>リンク集の各リンクには<strong>適用年度</strong>が書いてあります。年度を必ず確かめてから開いてください</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">8</span>要望・不具合</h2>
+  <p>Teams の「税額ポケット」チャネルへ。特に次の2つを聞かせてください。</p>
+  <ol>
+    <li>関与先で実際に開いたか</li>
+    <li>次にどのメニューが欲しいか</li>
+  </ol>
+</section>
+
+<footer>
+  <p>本ツールの計算結果は概算であり、申告その他の税務判断の根拠として用いることはできません。実際の税額は個別の事情により異なります。</p>
+</footer>
+
+</div>
+</body>
+</html>
