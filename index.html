@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- 入力した金額が端末の外へ出る経路を、ブラウザ側にも禁止させる（設計原則1の多層防御）。
+     GitHub Pages はレスポンスヘッダを設定できないため meta で宣言する。
+     'self' 以外への通信・スクリプト・画像の読み込みと、フォーム送信をすべて塞ぐ。
+     ★外部リソースを1つでも足すときは、ここを直さないと動かない。それが狙い。
+     リンク集の外部リンク（別タブで開く画面遷移）は CSP の対象外なので影響しない。 -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>税額ポケット</title>
 <meta name="description" content="関与先で使う税額計算ツール">
 <meta name="theme-color" content="#ffffff">

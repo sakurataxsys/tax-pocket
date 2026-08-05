@@ -8,7 +8,7 @@
 // ★ロジック（src/ 配下）を変更したら CACHE_VERSION を上げること。
 //   data/*.json を差し替えるだけの改正では上げる必要はない（network-first のため）。
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
@@ -47,6 +47,7 @@ const DATA_FILES = [
   "./data/toroku_menkyozei.json",
   "./data/toroku_menkyozei_hyo.json",
   "./data/entaizei.json",
+  "./data/link_shu.json",
 ];
 
 const DATA_TIMEOUT_MS = 2000;

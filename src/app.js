@@ -9,6 +9,7 @@ import {
   load_inshizei_tables,
   load_toroku_menkyozei_tables,
   load_entaizei_tables,
+  load_link_shu,
 } from "./data.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
@@ -75,7 +76,39 @@ const MENU = [
     desc: "納付が遅れた日数から",
     ready: true,
   },
+  {
+    path: "#/link-shu",
+    name: "リンク集",
+    desc: "税額表・社会保険料率等（適用年度つき）",
+    ready: true,
+  },
+  { name: "法人税の早見表", desc: "実効税率・均等割", ready: false },
 ];
+
+/**
+ * 計算と結果の描画をまとめて包む。
+ *
+ * 改正で `data/*.json` の形が変わったとき、旧シェルの端末は次に起動し直すまで
+ * 「旧ロジック＋新データ」で動く（sw.js の設計。判断ログ D-16）。
+ * この間に計算が例外を投げると、イベントリスナの中なので黙って握り潰され、
+ * **直前の計算結果が画面に残ったまま入力だけが変わる**。
+ * 古い数字を新しい入力の結果と読み違えないよう、失敗しても必ず結果領域を差し替える。
+ */
+function show_result(area, build) {
+  let nodes;
+  try {
+    nodes = build();
+  } catch {
+    area.replaceChildren(
+      message_box(
+        "計算できませんでした。税率表が新しくなっている可能性があります。" +
+          "アプリをいったん閉じて開き直してください。",
+      ),
+    );
+    return;
+  }
+  area.replaceChildren(...[nodes].flat());
+}
 
 // ------------------------------------------------------------ メニュー画面
 
@@ -175,15 +208,12 @@ async function render_taishokukin() {
       return;
     }
 
-    const r = calc_taishokukin(input, tables);
-    if (!r.ok) {
-      result_area.replaceChildren(message_box(r.riyu));
-      return;
-    }
-    const version = pick_version(tables.taishokukin["版"], input.nen);
-    result_area.replaceChildren(
-      ...render_result(r, input, version, tables.taishokukin["最終確認日"]),
-    );
+    show_result(result_area, () => {
+      const r = calc_taishokukin(input, tables);
+      if (!r.ok) return message_box(r.riyu);
+      const version = pick_version(tables.taishokukin["版"], input.nen);
+      return render_result(r, input, version, tables.taishokukin["最終確認日"]);
+    });
   }
 
   for (const el of [in_nen, in_shunyu, in_years, in_months, in_yakuin]) {
@@ -406,12 +436,10 @@ async function render_genka_shokyaku() {
       return;
     }
 
-    const r = calc_genka_shokyaku(input, tables);
-    if (!r.ok) {
-      result_area.replaceChildren(message_box(r.riyu));
-      return;
-    }
-    result_area.replaceChildren(...render_shokyaku_result(r, input, tables));
+    show_result(result_area, () => {
+      const r = calc_genka_shokyaku(input, tables);
+      return r.ok ? render_shokyaku_result(r, input, tables) : message_box(r.riyu);
+    });
   }
 
   for (const el of [
@@ -631,20 +659,18 @@ async function render_inshizei() {
   }
 
   function recalc() {
-    apply_shurui();
-    const input = {
-      sakusei_bi: in_bi.value,
-      key: in_shurui.value,
-      kingaku: Number(String(in_kingaku.value).replace(/[^0-9]/g, "") || 0),
-      kingaku_nashi: in_nashi.input.checked,
-      keigen_taisho: in_keigen.input.checked,
-    };
-    const r = calc_inshizei(input, tables);
-    if (!r.ok) {
-      result_area.replaceChildren(message_box(r.riyu));
-      return;
-    }
-    result_area.replaceChildren(...render_inshizei_result(r, input, tables));
+    show_result(result_area, () => {
+      apply_shurui();
+      const input = {
+        sakusei_bi: in_bi.value,
+        key: in_shurui.value,
+        kingaku: Number(String(in_kingaku.value).replace(/[^0-9]/g, "") || 0),
+        kingaku_nashi: in_nashi.input.checked,
+        keigen_taisho: in_keigen.input.checked,
+      };
+      const r = calc_inshizei(input, tables);
+      return r.ok ? render_inshizei_result(r, input, tables) : message_box(r.riyu);
+    });
   }
 
   for (const el of [in_bi, in_shurui, in_kingaku]) {
@@ -855,12 +881,10 @@ async function render_entaizei() {
       is_kigengo,
     };
 
-    const r = calc_entaizei(input, tables);
-    if (!r.ok) {
-      result_area.replaceChildren(message_box(r.riyu));
-      return;
-    }
-    result_area.replaceChildren(...render_entaizei_result(r, input, tables));
+    show_result(result_area, () => {
+      const r = calc_entaizei(input, tables);
+      return r.ok ? render_entaizei_result(r, input, tables) : message_box(r.riyu);
+    });
   }
 
   for (const el of [in_shurui, in_honzei, in_hotei, in_kubun, in_nokigen, in_kanno]) {
@@ -1100,25 +1124,26 @@ async function render_toroku_menkyozei() {
   }
 
   function recalc() {
-    const ha = apply_shurui();
-    const input = {
-      toki_bi: in_bi.value,
-      path: in_shurui.value,
-      kingaku: Number(String(in_kingaku.value).replace(/[^0-9]/g, "") || 0),
-      suryo: Number(in_suryo.value || 0),
-      keigen_key: in_keigen.value || null,
-      shutoku_bi: shutoku_wrap.hidden ? null : in_shutoku.value,
-      hojin_kubun: in_hojin.value,
-    };
-    const r = calc_toroku_menkyozei(input, tables);
-    if (!r.ok) {
-      result_area.replaceChildren(
-        message_box(r.riyu),
-        ...(r["原文"] ? [note_block("税率欄の原文", [r["原文"]])] : []),
-      );
-      return;
-    }
-    result_area.replaceChildren(...render_toroku_result(r, input, tables, ha));
+    show_result(result_area, () => {
+      const ha = apply_shurui();
+      const input = {
+        toki_bi: in_bi.value,
+        path: in_shurui.value,
+        kingaku: Number(String(in_kingaku.value).replace(/[^0-9]/g, "") || 0),
+        suryo: Number(in_suryo.value || 0),
+        keigen_key: in_keigen.value || null,
+        shutoku_bi: shutoku_wrap.hidden ? null : in_shutoku.value,
+        hojin_kubun: in_hojin.value,
+      };
+      const r = calc_toroku_menkyozei(input, tables);
+      if (!r.ok) {
+        return [
+          message_box(r.riyu),
+          ...(r["原文"] ? [note_block("税率欄の原文", [r["原文"]])] : []),
+        ];
+      }
+      return render_toroku_result(r, input, tables, ha);
+    });
   }
 
   in_gou.addEventListener("change", () => {
@@ -1287,6 +1312,56 @@ function render_toroku_result(r, input, tables, ha) {
   return blocks;
 }
 
+// ---------------------------------------------------------------- リンク集画面
+
+async function render_link_shu() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let data;
+  try {
+    data = await load_link_shu();
+  } catch {
+    root.replaceChildren(
+      page_title("リンク集"),
+      message_box(
+        "リンク集を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても一覧を見られます。",
+      ),
+    );
+    return;
+  }
+
+  root.replaceChildren(
+    page_title("リンク集", "税額表・社会保険料率等"),
+    // ★適用年度を必ず出す（設計原則6）。危ないのはリンク切れではなく、古いページが正常に開くこと
+    ...data["分類"].map((k) =>
+      h("section", { class: "block" },
+        h("h2", { class: "block__title" }, k["見出し"]),
+        h("div", { class: "links" },
+          k["リンク"].map((l) =>
+            h("a", {
+              class: "link",
+              href: l["url"],
+              target: "_blank",
+              rel: "noopener noreferrer",
+            },
+              h("span", { class: "link__head" },
+                h("span", { class: "link__name" }, l["名称"]),
+                h("span", { class: "link__year" }, l["適用年度"]),
+              ),
+              h("span", { class: "link__from" }, l["提供元"]),
+              l["補足"] && h("span", { class: "link__note" }, l["補足"]),
+            ),
+          ),
+        ),
+      ),
+    ),
+    note_block("この一覧について", data["注記"]),
+    // ★リンク集の最終更新日を画面に出す（設計原則6）
+    h("p", { class: "updated" }, `このリンク集の最終更新日：${format_hizuke(data["最終更新日"])}`),
+  );
+}
+
 // ------------------------------------------------------------------ ルータ
 
 const ROUTES = {
@@ -1296,6 +1371,7 @@ const ROUTES = {
   "/inshizei": render_inshizei,
   "/toroku-menkyozei": render_toroku_menkyozei,
   "/entaizei": render_entaizei,
+  "/link-shu": render_link_shu,
 };
 
 function route() {
