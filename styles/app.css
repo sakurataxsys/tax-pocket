@@ -221,7 +221,9 @@ main {
 
 .result__subs {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* 見出し（dt）は文字幅ぶんを確保し、余りを値（dd）に渡して折り返させる。
+     1fr auto にすると、値が長いとき見出しが1文字ずつ縦に割れる */
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 0.375rem 1rem;
   margin: 1.5rem 0 0;
 }
