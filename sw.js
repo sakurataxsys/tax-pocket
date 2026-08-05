@@ -8,7 +8,9 @@
 // ★ロジック（src/ 配下）を変更したら CACHE_VERSION を上げること。
 //   data/*.json を差し替えるだけの改正では上げる必要はない（network-first のため）。
 
-const CACHE_VERSION = "v8";
+// ★src/version.js の APP_VERSION と同じ文字列にする（tests/version.test.js が一致を検査する）。
+//   画面に出す版は APP_VERSION（＝シェルの中身）であって、この定数ではない。理由は src/version.js に書いた。
+const CACHE_VERSION = "v9";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
@@ -21,6 +23,7 @@ const SHELL = [
   "./src/ui.js",
   "./src/data.js",
   "./src/format.js",
+  "./src/version.js",
   "./src/calc/taishokukin.js",
   "./src/calc/genka_shokyaku.js",
   "./src/calc/inshizei.js",

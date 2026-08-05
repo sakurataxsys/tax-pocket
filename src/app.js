@@ -4,6 +4,7 @@
 // 後から別の版のモジュールを取りに行く経路を作らない。
 
 import {
+  load_data,
   load_taishokukin_tables,
   load_genka_shokyaku_tables,
   load_inshizei_tables,
@@ -12,6 +13,7 @@ import {
   load_link_shu,
   load_hojinzei_hayami,
 } from "./data.js";
+import { APP_VERSION, KOUSHIN_ICHIRAN } from "./version.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
 import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
@@ -92,6 +94,12 @@ const MENU = [
     path: "#/hojinzei-hayami",
     name: "法人税の早見表",
     desc: "実効税率・均等割",
+    ready: true,
+  },
+  {
+    path: "#/koushin",
+    name: "更新の確認",
+    desc: "この端末に入っている数値表の日付",
     ready: true,
   },
 ];
@@ -1535,6 +1543,86 @@ async function render_link_shu() {
   );
 }
 
+// ------------------------------------------------------------ 更新の確認画面
+
+/**
+ * 改正を反映したことを Teams で知らせたとき、職員が自分の端末で照合するための画面（判断ログ D-25）。
+ *
+ * ★「アプリの版」と「数値表の日付」は別々の合格条件として見せる。
+ *   数値表（data/*.json）は network-first なので、この画面を開いた時点で最新に入れ替わる。
+ *   一方ロジック（src/ 配下）は版付き cache-first なので、次に起動し直すまで古いままでありうる（D-16）。
+ *   日付だけを見せると「日付は最新なのに旧ロジックで計算している」状態を反映済みと誤読させる。
+ */
+async function render_koushin() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  // 1つ読めなくても画面は出す（電波の悪い場所で開くのが主な用途のため）
+  const rows = await Promise.all(
+    KOUSHIN_ICHIRAN.map(async (t) => {
+      try {
+        const json = await load_data(t.file);
+        const hizuke = json[t.key];
+        return {
+          file: t.file,
+          name: typeof json["名称"] === "string" ? json["名称"] : t.file,
+          // 決め打ったキーが無い＝差し替えでキー名が変わった。別の日付で代用しない
+          hizuke: typeof hizuke === "string" ? hizuke : null,
+          yomenai: false,
+        };
+      } catch {
+        return { file: t.file, name: t.file, hizuke: null, yomenai: true };
+      }
+    }),
+  );
+
+  const hizuke_cell = (r) => {
+    if (r.yomenai) return "未取得";
+    if (r.hizuke === null) return "日付が読めません";
+    return format_hizuke(r.hizuke);
+  };
+
+  root.replaceChildren(
+    page_title("更新の確認", "この端末に入っている内容"),
+    h("section", { class: "block" },
+      result_card("アプリの版", APP_VERSION),
+      h("p", { class: "block__lead" },
+        "計算のしかた（ロジック）の版です。数値表だけの改正では変わりません。",
+      ),
+    ),
+    h("section", { class: "block" },
+      h("h2", { class: "block__title" }, "数値表の日付"),
+      h("table", { class: "schedule" },
+        h("thead", {},
+          h("tr", {},
+            h("th", { class: "schedule__th" }, "数値表"),
+            h("th", { class: "schedule__th schedule__th--num" }, "日付"),
+          ),
+        ),
+        h("tbody", {},
+          rows.map((r) =>
+            h("tr", {},
+              h("td", { class: "schedule__year" },
+                h("span", {}, r.name),
+                h("span", { class: "schedule__note" }, `data/${r.file}.json`),
+              ),
+              h("td", {
+                class: r.hizuke === null ? "schedule__num schedule__num--muted" : "schedule__num",
+              }, hizuke_cell(r)),
+            ),
+          ),
+        ),
+      ),
+    ),
+    note_block("見かた", [
+      "Teams の「税額ポケット」チャネルのお知らせには、更新した数値表の名称と日付が書いてあります。同じ日付がここに出ていれば、この端末に反映されています。",
+      "お知らせに「アプリの版」が書かれているときは、上の版と見比べてください。違っていたら、アプリをいったん閉じて開き直してください。",
+      "「未取得」の行は、通信できる場所で一度この画面を開くと入ります。",
+      "「日付が読めません」と出ているときは、数値表の差し替えでキー名が変わっている可能性があります。計算せずに Teams のチャネルへ知らせてください。",
+    ]),
+  );
+}
+
 // ------------------------------------------------------------------ ルータ
 
 const ROUTES = {
@@ -1546,6 +1634,7 @@ const ROUTES = {
   "/entaizei": render_entaizei,
   "/link-shu": render_link_shu,
   "/hojinzei-hayami": render_hojinzei_hayami,
+  "/koushin": render_koushin,
 };
 
 function route() {
