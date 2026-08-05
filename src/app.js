@@ -10,6 +10,7 @@ import {
   load_toroku_menkyozei_tables,
   load_entaizei_tables,
   load_link_shu,
+  load_hojinzei_hayami,
 } from "./data.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
@@ -21,6 +22,11 @@ import {
   keigen_for_leaf,
 } from "./calc/toroku_menkyozei.js";
 import { calc_entaizei, needs_kikan_tokurei_chui } from "./calc/entaizei.js";
+import {
+  build_zeigaku_hyo,
+  build_kintowari_hyo,
+  horitsu_jikko_zeiritsu,
+} from "./calc/hojinzei_hayami.js";
 import {
   format_en,
   format_number,
@@ -82,7 +88,12 @@ const MENU = [
     desc: "税額表・社会保険料率等（適用年度つき）",
     ready: true,
   },
-  { name: "法人税の早見表", desc: "実効税率・均等割", ready: false },
+  {
+    path: "#/hojinzei-hayami",
+    name: "法人税の早見表",
+    desc: "実効税率・均等割",
+    ready: true,
+  },
 ];
 
 /**
@@ -1312,6 +1323,168 @@ function render_toroku_result(r, input, tables, ha) {
   return blocks;
 }
 
+// -------------------------------------------------------- 法人税の早見表画面
+
+/** 直近の4月1日。事業年度開始日は過去の日付なので、今日を既定にすると誤入力になりやすい */
+function chokkin_no_shigatsu_ichinichi() {
+  const d = new Date();
+  const y = d.getMonth() + 1 >= 4 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}-04-01`;
+}
+
+async function render_hojinzei_hayami() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let data;
+  try {
+    data = await load_hojinzei_hayami();
+  } catch {
+    root.replaceChildren(
+      page_title("法人税の早見表"),
+      message_box(
+        "率の表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  const in_bi = date_input(chokkin_no_shigatsu_ichinichi());
+  const result_area = h("div", { class: "result-area" });
+
+  function recalc() {
+    show_result(result_area, () => render_hayami(data, in_bi.value));
+  }
+  in_bi.addEventListener("input", recalc);
+  in_bi.addEventListener("change", recalc);
+
+  root.replaceChildren(
+    page_title("法人税の早見表", "資本金1億円以下の普通法人・標準税率"),
+    h("section", { class: "form" },
+      field("事業年度開始日", in_bi, "軽減税率が使えるかどうかは、この日で決まります"),
+    ),
+    result_area,
+  );
+  recalc();
+}
+
+/** 早見表の中身を組み立てる */
+function render_hayami(data, kaishi_bi) {
+  const r = build_zeigaku_hyo(data, kaishi_bi);
+  if (!r.ok) return message_box(r.riyu);
+
+  const kinto = build_kintowari_hyo(data);
+  const jikko = horitsu_jikko_zeiritsu(data);
+  const blocks = [];
+
+  if (r["軽減の期限切れ"]) {
+    blocks.push(
+      warn_line(
+        `中小法人の軽減税率の特例（租税特別措置法42条の3の2）は、${format_hizuke(r["軽減の適用終了日"])}までに開始する事業年度までです。` +
+          "この表は本則の19%で組みました。延長されている場合は率の表の差し替えが必要です。",
+      ),
+    );
+  }
+
+  // ---- 表1 所得規模別の納税額と負担率
+  blocks.push(
+    h("section", { class: "block" },
+      h("h2", { class: "block__title" }, "所得規模別の納税額と負担率"),
+      h("p", { class: "block__lead" },
+        `事業年度開始日 ${format_hizuke(kaishi_bi)}　／　均等割は含みません`,
+      ),
+      h("div", { class: "hayami" },
+        r["行"].map((g) =>
+          h("div", { class: "hayami__card" },
+            h("div", { class: "hayami__head" },
+              h("span", { class: "hayami__shotoku" }, `所得 ${format_en(g["所得"])}`),
+              h("span", { class: "hayami__ritsu" }, `${(g["負担率"] * 100).toFixed(1)}%`),
+            ),
+            h("dl", { class: "hayami__uchiwake" },
+              [
+                ["法人税", g["法人税"]],
+                ["地方法人税", g["地方法人税"]],
+                ["住民税 法人税割", g["住民税法人税割"]],
+                ["事業税", g["事業税"]],
+                ["特別法人事業税", g["特別法人事業税"]],
+              ].flatMap(([label, v]) => [
+                h("dt", {}, label),
+                h("dd", {}, format_en(v)),
+              ]),
+            ),
+            h("p", { class: "hayami__gokei" },
+              h("span", {}, "合計"),
+              h("strong", {}, format_en(g["合計"])),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  blocks.push(
+    note_block("法定実効税率（会計の税効果で使う率）", [
+      `${(jikko * 100).toFixed(2)}%（本則。法人税23.2%・事業税7.0%で計算）`,
+      "式：（法人税率 ×（1 ＋ 地方法人税率 ＋ 住民税法人税割率）＋ 事業税率 ×（1 ＋ 特別法人事業税率））÷（1 ＋ 事業税率 ×（1 ＋ 特別法人事業税率））",
+      "年800万円以下の部分は軽減税率が効くため、上の表の負担率はこれより低く出ます。",
+    ]),
+  );
+
+  // ---- 表2 均等割
+  const kinto_gyo = (title, kubun, with_juugyoin) =>
+    h("div", { class: "kinto" },
+      h("h3", { class: "kinto__title" }, title),
+      h("table", { class: "schedule" },
+        h("thead", {},
+          h("tr", {},
+            h("th", { class: "schedule__th" }, "資本金等の額"),
+            with_juugyoin && h("th", { class: "schedule__th" }, "従業者数"),
+            h("th", { class: "schedule__th schedule__th--num" }, "年額"),
+          ),
+        ),
+        h("tbody", {},
+          kubun.map((k) =>
+            h("tr", {},
+              h("td", { class: "schedule__year" }, k["資本金等の額"]),
+              with_juugyoin && h("td", { class: "schedule__year" }, k["従業者数"]),
+              h("td", { class: "schedule__num" }, format_en(k["税額"])),
+            ),
+          ),
+        ),
+      ),
+    );
+
+  const saitei = kinto["赤字でも出る最低額"];
+  blocks.push(
+    h("section", { class: "block" },
+      h("h2", { class: "block__title" }, "均等割（赤字でも課されます）"),
+      result_card("最低でも年間", format_en(saitei["合計"]), [
+        { label: "道府県民税", value: format_en(saitei["道府県民税"]) },
+        { label: "市町村民税", value: format_en(saitei["市町村民税"]) },
+      ]),
+      h("p", { class: "block__lead" }, saitei["説明"]),
+      kinto_gyo("道府県民税（地方税法52条1項）", kinto["道府県民税"]["区分"], false),
+      kinto_gyo("市町村民税（地方税法312条1項）", kinto["市町村民税"]["区分"], true),
+    ),
+  );
+
+  blocks.push(
+    note_block("均等割の区分の見かた", [
+      ...kinto["判定の注意"],
+      kinto["市町村民税"]["非対称の注意"],
+    ]),
+    note_block("この表について", data["共通の注記"]),
+    note_block("このツールでは扱わないもの（要相談）", data["扱わないもの"]),
+    note_block("根拠", [
+      ...data["出典"].map((s) => s["名称"]),
+      `率の最終確認日：${format_hizuke(data["最終確認日"])}`,
+      `収録開始日：${format_hizuke(data["収録開始日"])}（${data["収録開始日の理由"]}）`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ---------------------------------------------------------------- リンク集画面
 
 async function render_link_shu() {
@@ -1372,6 +1545,7 @@ const ROUTES = {
   "/toroku-menkyozei": render_toroku_menkyozei,
   "/entaizei": render_entaizei,
   "/link-shu": render_link_shu,
+  "/hojinzei-hayami": render_hojinzei_hayami,
 };
 
 function route() {

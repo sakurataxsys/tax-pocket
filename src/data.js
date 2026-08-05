@@ -37,6 +37,11 @@ export async function load_entaizei_tables() {
   return { entaizei };
 }
 
+/** 法人税の早見表の率 */
+export async function load_hojinzei_hayami() {
+  return load_data("hojinzei_hayami");
+}
+
 /** リンク集 */
 export async function load_link_shu() {
   return load_data("link_shu");

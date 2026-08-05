@@ -342,6 +342,70 @@ main {
   opacity: 0.5;
 }
 
+/* -------------------------------------------------------- 法人税の早見表 */
+
+/* 所得規模ごとのカードを縦に積む。横に長い表はモバイルで読めないため作らない */
+.hayami { display: flex; flex-direction: column; gap: 0.875rem; }
+
+.hayami__card {
+  padding: 1.125rem 1.375rem;
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.hayami__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+}
+
+.hayami__shotoku { font-size: 1rem; font-weight: 600; }
+.hayami__ritsu {
+  flex: none;
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hayami__uchiwake {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+
+.hayami__uchiwake dt { font-size: 0.8125rem; color: var(--muted); }
+.hayami__uchiwake dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hayami__gokei {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0.875rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--bg-subtle);
+  font-size: 0.9375rem;
+}
+.hayami__gokei strong { font-variant-numeric: tabular-nums; }
+
+.block__lead {
+  margin: -0.25rem 0 1rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.kinto { margin: 2rem 0 0; }
+.kinto__title { margin: 0 0 0.5rem; font-size: 0.9375rem; font-weight: 600; }
+
 /* ------------------------------------------------------------ リンク集 */
 
 .links { display: flex; flex-direction: column; gap: 0.75rem; }
