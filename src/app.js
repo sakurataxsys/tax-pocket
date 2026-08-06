@@ -102,7 +102,7 @@ const MENU = [
   {
     path: "#/furusato",
     name: "ふるさと納税",
-    desc: "限度額の目安（正式方式と簡易方式）",
+    desc: "限度額の目安（計算方式を選べます）",
     ready: true,
   },
   {
@@ -1796,6 +1796,17 @@ async function render_furusato() {
     nen_options.map((y) => ({ value: y, label: format_nenbun(y) })),
     default_nen,
   );
+  // ★計算方式の切り替え。既定は正式方式（法令どおり）。
+  //   両方式の限度額が食い違うのは、所得税と住民税で控除額が違う3つ
+  //   （生命保険料控除・地震保険料控除・ふるさと納税以外の寄附金控除）を入れたときと、
+  //   附則5条の5に落ちるときだけ。それ以外の入力では同じ額になる（判断ログ D-29）。
+  const in_houshiki = select_input(
+    [
+      { value: "seishiki", label: "正式方式（法令どおり）" },
+      { value: "kani", label: "簡易方式（民間の近似）" },
+    ],
+    "seishiki",
+  );
   const in_kyuyo = money_input({ placeholder: "0" });
   const in_shakai_hoken = money_input({ placeholder: "0" });
   const in_haigusha_umu = select_input(
@@ -1954,6 +1965,11 @@ async function render_furusato() {
     "section",
     { class: "form" },
     field("適用年分（寄附する年）", in_nen),
+    field(
+      "計算方式",
+      in_houshiki,
+      "簡易方式は法令の方式ではありません。関与先への説明は正式方式をお使いください",
+    ),
     field("給与収入（円）", in_kyuyo),
     field("社会保険料等の支払額（円）", in_shakai_hoken),
     field("配偶者", in_haigusha_umu),
@@ -2048,7 +2064,7 @@ async function render_furusato() {
     show_result(result_area, () => {
       const r = calc_furusato(input, tables);
       if (!r.ok) return message_box(r.riyu);
-      const blocks = render_furusato_result(r, tables);
+      const blocks = render_furusato_result(r, in_houshiki.value, tables);
       if (shogai_warn) {
         blocks.unshift(
           warn_line("障害者の人数が扶養親族の人数を超えています。超えた分は計算に入れていません。"),
@@ -2060,6 +2076,7 @@ async function render_furusato() {
 
   const all_inputs = [
     in_nen,
+    in_houshiki,
     in_kyuyo,
     in_shakai_hoken,
     in_haigusha_umu,
@@ -2103,7 +2120,7 @@ async function render_furusato() {
   in_honnin_kinro.input.addEventListener("change", recalc);
 
   root.replaceChildren(
-    page_title("ふるさと納税", "限度額の目安（正式方式と簡易方式）"),
+    page_title("ふるさと納税", "限度額の目安（計算方式を選べます）"),
     form,
     result_area,
   );
@@ -2119,10 +2136,16 @@ function format_en_marume(n) {
   return `${format_number(Math.round(n))}円`;
 }
 
-/** ふるさと納税の結果・計算過程・根拠を組み立てる */
-function render_furusato_result(r, tables) {
+/**
+ * ふるさと納税の結果・計算過程・根拠を組み立てる。
+ * houshiki は "seishiki"（正式方式＝法令どおり）か "kani"（簡易方式＝民間の近似）。
+ * 計算そのものは常に両方式を出しているが、画面には選ばれたほうだけを表示する。
+ */
+function render_furusato_result(r, houshiki, tables) {
   const engine = r.engine;
-  const s = r.seishiki;
+  const kani = houshiki === "kani";
+  const s = kani ? r.kani : r.seishiki;
+  const houshiki_mei = kani ? "簡易方式" : "正式方式";
   const blocks = [];
 
   // ★適用年分・住民税の年度は必ず表示する（設計原則6）
@@ -2134,6 +2157,14 @@ function render_furusato_result(r, tables) {
     ),
   );
 
+  if (kani) {
+    blocks.push(
+      warn_line(
+        "簡易方式で計算しています。法令の方式ではありません。関与先への説明は正式方式をお使いください。",
+      ),
+    );
+  }
+
   if (s.uchiwake && !s.uchiwake.jiko_futan_ni_osamaru) {
     blocks.push(warn_line("自己負担は2,000円ちょうどにはなりません（下の内訳を見てください）。"));
   }
@@ -2142,10 +2173,7 @@ function render_furusato_result(r, tables) {
     blocks.push(message_box("控除される寄附額はありません。"));
   } else {
     blocks.push(
-      result_card("ふるさと納税の限度額（正式方式）", format_en(s.gendo_gaku), [
-        { label: "簡易方式の限度額", value: format_en(r.kani.gendo_gaku) },
-        { label: "正式方式との差額", value: format_en(r.sagaku) },
-      ]),
+      result_card(`ふるさと納税の限度額（${houshiki_mei}）`, format_en(s.gendo_gaku)),
     );
   }
 
@@ -2163,16 +2191,27 @@ function render_furusato_result(r, tables) {
       label: "課税総所得金額（住民税）",
       value: format_en(engine.juminzei.kazei_sogo_shotoku_kingaku),
     },
-    {
-      label: "人的控除差調整額",
-      value: format_en(engine.juminzei.jinteki_kojo_sa_chosei_gaku),
-      note: "地方税法37条の2第11項1号",
-    },
-    {
-      label: "割合表を引く金額",
-      value: format_en(s.hikizuru_gaku),
-      note: "課税総所得金額（住民税） − 人的控除差調整額",
-    },
+    // 人的控除差調整額を差し引くのは正式方式だけ。簡易方式は所得税ベースの課税総所得金額をそのまま使う
+    ...(kani
+      ? [
+          {
+            label: "割合表を引く金額",
+            value: format_en(s.hikizuru_gaku),
+            note: "課税総所得金額（所得税）。人的控除差調整額を差し引かないのが簡易方式です",
+          },
+        ]
+      : [
+          {
+            label: "人的控除差調整額",
+            value: format_en(engine.juminzei.jinteki_kojo_sa_chosei_gaku),
+            note: "地方税法37条の2第11項1号",
+          },
+          {
+            label: "割合表を引く金額",
+            value: format_en(s.hikizuru_gaku),
+            note: "課税総所得金額（住民税） − 人的控除差調整額",
+          },
+        ]),
     {
       label: "適用する割合",
       value: s.wariai_percent === null ? "―" : `${s.wariai_percent}％`,
@@ -2218,12 +2257,12 @@ function render_furusato_result(r, tables) {
   blocks.push(breakdown(steps));
 
   blocks.push(
-    note_block("簡易方式（民間の近似）", [
-      "簡易方式は法令の方式ではありません。民間のシミュレーターでよく使われる近似で、正式方式が住民税の課税総所得金額から人的控除差調整額を控除した金額で割合表を引くのに対し、簡易方式は所得税ベースの課税総所得金額でそのまま割合表を引きます。",
-      `割合表を引く金額（所得税の課税総所得金額）：${format_en(r.kani.hikizuru_gaku)}`,
-      `適用する割合：${r.kani.wariai_percent === null ? "―" : `${r.kani.wariai_percent}％`}`,
-      `限度額（簡易方式）：${format_en(r.kani.gendo_gaku)}`,
-      `正式方式との差額（正式 − 簡易）：${format_en(r.sagaku)}`,
+    note_block("計算方式について", [
+      "正式方式は法令どおりの計算です（地方税法37条の2第11項）。住民税の課税総所得金額から人的控除差調整額を差し引いた金額で割合表を引きます。",
+      "簡易方式は民間のシミュレーターでよく使われる近似で、法令の方式ではありません。所得税の課税総所得金額でそのまま割合表を引きます。",
+      "2つの方式で限度額が食い違うのは、所得税と住民税で控除額が違う3つ（生命保険料控除・地震保険料控除・ふるさと納税以外の寄附金控除）を入力したときです。それ以外の入力では同じ額になります。",
+      "食い違うときは、正式方式のほうが必ず同じか大きく出ます。ただしその場合、正式方式の限度額まで寄附すると自己負担が2,000円を超えます。",
+      "上の「計算方式」で切り替えられます。",
     ]),
   );
 
