@@ -1968,7 +1968,7 @@ async function render_furusato() {
     field(
       "計算方式",
       in_houshiki,
-      "簡易方式は法令の方式ではありません。関与先への説明は正式方式をお使いください",
+      "簡易方式は法令の方式ではありません",
     ),
     field("給与収入（円）", in_kyuyo),
     field("社会保険料等の支払額（円）", in_shakai_hoken),
@@ -2160,7 +2160,7 @@ function render_furusato_result(r, houshiki, tables) {
   if (kani) {
     blocks.push(
       warn_line(
-        "簡易方式で計算しています。法令の方式ではありません。関与先への説明は正式方式をお使いください。",
+        "簡易方式で計算しています。法令の方式ではありません。",
       ),
     );
   }
