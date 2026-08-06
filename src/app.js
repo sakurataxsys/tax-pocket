@@ -93,8 +93,8 @@ const MENU = [
   },
   {
     path: "#/gengo",
-    name: "元号変換",
-    desc: "元号⇄西暦・年齢の概算",
+    name: "和暦・西暦",
+    desc: "和暦⇄西暦・年齢の概算",
     ready: true,
   },
   {
@@ -1506,7 +1506,7 @@ function render_hayami(data, kaishi_bi) {
   return blocks;
 }
 
-// ------------------------------------------------------------ 元号変換画面
+// ------------------------------------------------------------ 和暦・西暦画面
 
 /** 「令和8年」「令和元年」のように、元号年を1年は「元」で表す */
 function nengo_hyoji(mei, nen) {
@@ -1522,7 +1522,7 @@ async function render_gengo() {
     data = await load_gengo();
   } catch {
     root.replaceChildren(
-      page_title("元号変換"),
+      page_title("和暦・西暦"),
       message_box(
         "元号早見表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
       ),
@@ -1604,14 +1604,14 @@ async function render_gengo() {
   }
 
   root.replaceChildren(
-    page_title("元号変換", "元号⇄西暦・年齢の概算（年単位）"),
+    page_title("和暦・西暦", "和暦⇄西暦・年齢の概算（年単位）"),
     form,
     result_area,
   );
   recalc();
 }
 
-/** 元号変換の結果・計算過程・根拠を組み立てる */
+/** 和暦・西暦の結果・計算過程・根拠を組み立てる */
 function render_gengo_result(input, data, this_year) {
   const r = input.r;
   const blocks = [];
