@@ -145,6 +145,21 @@ main {
 
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 
+/* 「詳しく入力」の開閉。罫線ではなく余白と青いラベルで示す */
+.details summary {
+  cursor: pointer;
+  margin: 0 0 1.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+.details summary::-webkit-details-marker { display: none; }
+.details summary::before { content: "＋ "; }
+.details[open] summary::before { content: "－ "; }
+/* マーカーを消したので、キーボードで来たときの位置が見えるようにする */
+.details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* 罫線で囲まず、ごく薄いグレーの面で入力欄を示す */
 .input {
   width: 100%;

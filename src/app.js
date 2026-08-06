@@ -13,9 +13,11 @@ import {
   load_link_shu,
   load_hojinzei_hayami,
   load_gengo,
+  load_furusato_tables,
 } from "./data.js";
 import { APP_VERSION, KOUSHIN_ICHIRAN } from "./version.js";
 import { calc_taishokukin } from "./calc/taishokukin.js";
+import { calc_furusato } from "./calc/furusato.js";
 import { pick_version } from "./calc/version_pick.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
 import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
@@ -95,6 +97,12 @@ const MENU = [
     path: "#/gengo",
     name: "和暦・西暦",
     desc: "和暦⇄西暦・年齢の概算",
+    ready: true,
+  },
+  {
+    path: "#/furusato",
+    name: "ふるさと納税",
+    desc: "限度額の目安（正式方式と簡易方式）",
     ready: true,
   },
   {
@@ -1680,6 +1688,578 @@ function render_gengo_result(input, data, this_year) {
   return blocks;
 }
 
+// -------------------------------------------------------- ふるさと納税画面
+
+/**
+ * data/furusato.json の「版」が収録している寄附年（西暦）の一覧を、新しい順で返す。
+ * 「適用終了年」が無い（＝現在も有効）版は考慮しない前提の書き方はせず、
+ * 無いときはその版の開始年だけを1年分として数える（pick_version と同じ前提）。
+ */
+function furusato_nen_options(fv_list) {
+  const years = new Set();
+  for (const v of fv_list) {
+    const kaishi = v["適用開始年"];
+    // ★上限を置く。この関数は show_result() の外（画面を組み立てる前）で呼ぶので、
+    //   データの「適用終了年」に極端な値が入っているとメッセージすら出せずに画面が固まる。
+    const end = Math.min(v["適用終了年"] ?? kaishi, kaishi + FURUSATO_NEN_HABA_MAX);
+    for (let y = kaishi; y <= end; y++) years.add(y);
+  }
+  return [...years].sort((a, b) => b - a);
+}
+
+/** 1つの版が並べる寄附年の上限（データが壊れたときに画面を止めないための歯止め） */
+const FURUSATO_NEN_HABA_MAX = 50;
+
+/** 扶養親族・障害者の人数欄の上限（入力欄の max と同じ値にする） */
+const FUYO_NINZU_MAX = 20;
+
+/**
+ * 人数欄の値を読む。
+ * ★`<input type="number">` の `max` は妥当性にしか効かず、キーボードからはいくらでも打てる。
+ *   この値はそのままループ回数になるので、読む時点で丸める（打ち間違いで画面が固まるのを防ぐ）。
+ */
+function read_ninzu(el) {
+  const n = Math.floor(Number(el.value) || 0);
+  return Math.min(Math.max(n, 0), FUYO_NINZU_MAX);
+}
+
+/**
+ * 扶養親族の配列（calc_shotokuzei_engine の jinteki.fuyo_shinzoku）を、
+ * 人数欄・所得のある特定親族欄・家族の障害者の人数欄から組み立てる。
+ *
+ * ★家族の障害者は新しいレコードを足さず、まだ障害者が付いていない要素に
+ *   先頭から「同居特別」→「特別」→「一般」の順で属性を付ける（二重計上の防止）。
+ *   人数が扶養親族の人数を超えた分は無視し、その旨を warn で返す。
+ */
+function build_fuyo_shinzoku(v) {
+  const list = [];
+  for (let i = 0; i < v.miman16; i++) list.push({ nenrei: 10, gokei_shotoku: 0, shogaisha: null });
+  for (let i = 0; i < v.ippan; i++) list.push({ nenrei: 17, gokei_shotoku: 0, shogaisha: null });
+  for (let i = 0; i < v.tokutei; i++) list.push({ nenrei: 20, gokei_shotoku: 0, shogaisha: null });
+  for (let i = 0; i < v.rojin; i++) {
+    list.push({ nenrei: 75, gokei_shotoku: 0, shogaisha: null, dokyo_rokei_sonzoku: false });
+  }
+  for (let i = 0; i < v.dokyo_rojin; i++) {
+    list.push({ nenrei: 75, gokei_shotoku: 0, shogaisha: null, dokyo_rokei_sonzoku: true });
+  }
+  for (const g of v.tokutei_shotoku_list) {
+    if (g > 0) list.push({ nenrei: 20, gokei_shotoku: g, shogaisha: null });
+  }
+
+  let nokori_dokyo = v.shogai_dokyo_tokubetsu;
+  let nokori_tokubetsu = v.shogai_tokubetsu;
+  let nokori_ippan = v.shogai_ippan;
+  for (const f of list) {
+    if (f.shogaisha) continue;
+    if (nokori_dokyo > 0) {
+      f.shogaisha = "tokubetsu";
+      f.dokyo_tokubetsu = true;
+      nokori_dokyo--;
+    } else if (nokori_tokubetsu > 0) {
+      f.shogaisha = "tokubetsu";
+      nokori_tokubetsu--;
+    } else if (nokori_ippan > 0) {
+      f.shogaisha = "ippan";
+      nokori_ippan--;
+    }
+  }
+
+  return { list, warn: nokori_dokyo > 0 || nokori_tokubetsu > 0 || nokori_ippan > 0 };
+}
+
+async function render_furusato() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let tables;
+  try {
+    tables = await load_furusato_tables();
+  } catch {
+    root.replaceChildren(
+      page_title("ふるさと納税"),
+      message_box(
+        "税率表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  const nen_options = furusato_nen_options(tables.furusato["版"]);
+  const default_nen = nen_options[0];
+  // 分離課税の区分（5つ）は、既定の年分の版から取り出す。年ごとに区分の構成が変わることは
+  // 想定していない（bunri_kazei.json は「令和7年分以降」の単一版）。
+  const bv = pick_version(tables.bunri_kazei["版"], default_nen);
+  const bunri_kubun = bv["区分"];
+
+  // ---- 常時表示欄
+  const in_nen = select_input(
+    nen_options.map((y) => ({ value: y, label: format_nenbun(y) })),
+    default_nen,
+  );
+  const in_kyuyo = money_input({ placeholder: "0" });
+  const in_shakai_hoken = money_input({ placeholder: "0" });
+  const in_haigusha_umu = select_input(
+    [
+      { value: "nashi", label: "いない" },
+      { value: "ari", label: "いる" },
+    ],
+    "nashi",
+  );
+  const in_haigusha_shotoku = money_input({ placeholder: "0" });
+  const in_haigusha_nenrei = number_input({ min: 0, max: 120, placeholder: "0" });
+  const in_16miman = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+  const in_ippan = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+  const in_tokutei = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+  const in_rojin = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+  const in_dokyo_rojin = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+
+  const haigusha_wrap = h(
+    "div",
+    { hidden: true },
+    field("配偶者の合計所得金額（円）", in_haigusha_shotoku),
+    field("配偶者の年齢（歳）", in_haigusha_nenrei, "老人控除対象配偶者（70歳以上）の判定に使います"),
+  );
+
+  // ---- 「詳しく入力」の各欄
+  const in_jigyo = money_input({ placeholder: "0" });
+  const in_fudosan = money_input({ placeholder: "0" });
+  const in_nenkin = money_input({ placeholder: "0" });
+  const in_sonota = money_input({ placeholder: "0" });
+
+  const bunri_els = bunri_kubun.map((k) => {
+    const in_shotoku = money_input({ placeholder: "0" });
+    const in_kazei = money_input({ placeholder: "0" });
+    return {
+      key: k["key"],
+      in_shotoku,
+      in_kazei,
+      el: h(
+        "div",
+        { class: "field-row" },
+        field(`${k["表示"]}　合計所得金額に入る額（特別控除前・円）`, in_shotoku, k["補足"]),
+        field(`${k["表示"]}　課税標準（特別控除後・円）`, in_kazei),
+      ),
+    };
+  });
+
+  const in_taishoku = money_input({ placeholder: "0" });
+
+  const in_shin_seimei = money_input({ placeholder: "0" });
+  const in_kyu_seimei = money_input({ placeholder: "0" });
+  const in_shin_nenkin = money_input({ placeholder: "0" });
+  const in_kyu_nenkin = money_input({ placeholder: "0" });
+  const in_kaigo_iryo = money_input({ placeholder: "0" });
+
+  const in_jishin = money_input({ placeholder: "0" });
+  const in_kyu_choki = money_input({ placeholder: "0" });
+
+  const in_shokibo = money_input({ placeholder: "0" });
+  const in_iryohi = money_input({ placeholder: "0" });
+  const in_zasson = money_input({ placeholder: "0" });
+  const in_kifukin_hoka = money_input({ placeholder: "0" });
+
+  const in_honnin_shogaisha = select_input(
+    [
+      { value: "", label: "該当なし" },
+      { value: "ippan", label: "一般" },
+      { value: "tokubetsu", label: "特別" },
+    ],
+    "",
+  );
+  const in_honnin_kafu = check_input("寡婦に該当する");
+  const in_honnin_hitorioya = select_input(
+    [
+      { value: "", label: "該当なし" },
+      { value: "chichi", label: "父" },
+      { value: "haha", label: "母" },
+    ],
+    "",
+  );
+  const in_honnin_kinro = check_input("勤労学生に該当する");
+
+  const in_shogai_ippan = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+  const in_shogai_tokubetsu = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+  const in_shogai_dokyo = number_input({ min: 0, max: FUYO_NINZU_MAX, value: 0 });
+
+  const in_tokutei_shotoku1 = money_input({ placeholder: "0" });
+  const in_tokutei_shotoku2 = money_input({ placeholder: "0" });
+
+  const details = h(
+    "details",
+    { class: "details" },
+    h("summary", {}, "詳しく入力"),
+    h(
+      "div",
+      { class: "field-row" },
+      field("事業所得（青色申告特別控除後・円）", in_jigyo),
+      field("不動産所得（円）", in_fudosan),
+    ),
+    h(
+      "div",
+      { class: "field-row" },
+      field("公的年金等に係る雑所得（円）", in_nenkin),
+      field("その他の総合課税の所得（円）", in_sonota),
+    ),
+    ...bunri_els.map((b) => b.el),
+    field("今年の退職所得の金額（円）", in_taishoku),
+    h(
+      "div",
+      { class: "field-row" },
+      field("新生命保険料（円）", in_shin_seimei),
+      field("旧生命保険料（円）", in_kyu_seimei),
+    ),
+    h(
+      "div",
+      { class: "field-row" },
+      field("新個人年金保険料（円）", in_shin_nenkin),
+      field("旧個人年金保険料（円）", in_kyu_nenkin),
+    ),
+    field("介護医療保険料（円）", in_kaigo_iryo),
+    h(
+      "div",
+      { class: "field-row" },
+      field("地震保険料（円）", in_jishin),
+      field("旧長期損害保険料（円）", in_kyu_choki),
+    ),
+    field("小規模企業共済等掛金（円）", in_shokibo),
+    field("医療費控除の額（円）", in_iryohi),
+    field("雑損控除の額（円）", in_zasson),
+    field("ふるさと納税以外の寄附金控除の額（円）", in_kifukin_hoka),
+    h(
+      "div",
+      { class: "field-row" },
+      field("本人の障害者区分", in_honnin_shogaisha),
+      field("本人のひとり親区分", in_honnin_hitorioya),
+    ),
+    in_honnin_kafu,
+    in_honnin_kinro,
+    field("家族の障害者の人数　一般（人）", in_shogai_ippan),
+    field("家族の障害者の人数　特別（人）", in_shogai_tokubetsu),
+    field(
+      "家族の障害者の人数　同居特別（人）",
+      in_shogai_dokyo,
+      "上で数えた扶養親族のうち、障害者である人数を入れてください",
+    ),
+    h(
+      "div",
+      { class: "field-row" },
+      field("所得のある特定親族（19〜22歳）①の合計所得金額（円）", in_tokutei_shotoku1),
+      field("所得のある特定親族（19〜22歳）②の合計所得金額（円）", in_tokutei_shotoku2),
+    ),
+  );
+
+  const result_area = h("div", { class: "result-area" });
+
+  const form = h(
+    "section",
+    { class: "form" },
+    field("適用年分（寄附する年）", in_nen),
+    field("給与収入（円）", in_kyuyo),
+    field("社会保険料等の支払額（円）", in_shakai_hoken),
+    field("配偶者", in_haigusha_umu),
+    haigusha_wrap,
+    field("扶養親族の人数　16歳未満（人）", in_16miman, "扶養控除はありませんが、給与収入850万円超のときの所得金額調整控除に影響します"),
+    field("扶養親族の人数　一般（16〜18歳・23歳以上、人）", in_ippan),
+    field("扶養親族の人数　特定（19〜22歳、人）", in_tokutei),
+    field("扶養親族の人数　老人（70歳以上、人）", in_rojin),
+    field("扶養親族の人数　同居老親等（70歳以上、人）", in_dokyo_rojin),
+    details,
+  );
+
+  function recalc() {
+    haigusha_wrap.hidden = in_haigusha_umu.value !== "ari";
+
+    const kyuyo_shunyu = Number(String(in_kyuyo.value).replace(/[^0-9]/g, "") || 0);
+    if (kyuyo_shunyu <= 0) {
+      result_area.replaceChildren(message_box("給与収入を入力してください。"));
+      return;
+    }
+
+    const num = (el) => Number(String(el.value).replace(/[^0-9]/g, "") || 0);
+
+    const { list: fuyo_shinzoku, warn: shogai_warn } = build_fuyo_shinzoku({
+      miman16: read_ninzu(in_16miman),
+      ippan: read_ninzu(in_ippan),
+      tokutei: read_ninzu(in_tokutei),
+      rojin: read_ninzu(in_rojin),
+      dokyo_rojin: read_ninzu(in_dokyo_rojin),
+      tokutei_shotoku_list: [num(in_tokutei_shotoku1), num(in_tokutei_shotoku2)],
+      shogai_ippan: read_ninzu(in_shogai_ippan),
+      shogai_tokubetsu: read_ninzu(in_shogai_tokubetsu),
+      shogai_dokyo_tokubetsu: read_ninzu(in_shogai_dokyo),
+    });
+
+    const haigusha =
+      in_haigusha_umu.value === "ari"
+        ? {
+            nenrei: Number(in_haigusha_nenrei.value || 0),
+            gokei_shotoku: num(in_haigusha_shotoku),
+            shogaisha: null,
+            dokyo_tokubetsu: false,
+          }
+        : null;
+
+    const bunri = bunri_els
+      .map((b) => ({
+        kubun: b.key,
+        shotoku_kingaku: num(b.in_shotoku),
+        kazei_hyojun: num(b.in_kazei),
+      }))
+      .filter((b) => b.shotoku_kingaku > 0 || b.kazei_hyojun > 0);
+
+    const input = {
+      nen: Number(in_nen.value),
+      shitei_toshi: false,
+      kyuyo_shunyu,
+      nenkin_zasshotoku: num(in_nenkin),
+      jigyo_shotoku: num(in_jigyo),
+      fudosan_shotoku: num(in_fudosan),
+      sonota_sogo_shotoku: num(in_sonota),
+      taishoku_shotoku_kingaku: num(in_taishoku),
+      bunri,
+      jinteki: {
+        honnin_shogaisha: in_honnin_shogaisha.value || null,
+        honnin_kafu: in_honnin_kafu.input.checked,
+        honnin_hitorioya: in_honnin_hitorioya.value || null,
+        honnin_kinro_gakusei: in_honnin_kinro.input.checked,
+        haigusha,
+        fuyo_shinzoku,
+      },
+      butsuteki: {
+        shakai_hoken_ryo: num(in_shakai_hoken),
+        shokibo_kyosai: num(in_shokibo),
+        seimei_hokenryo: {
+          shin_seimei: num(in_shin_seimei),
+          kyu_seimei: num(in_kyu_seimei),
+          shin_nenkin: num(in_shin_nenkin),
+          kyu_nenkin: num(in_kyu_nenkin),
+          kaigo_iryo: num(in_kaigo_iryo),
+        },
+        jishin_hokenryo: {
+          jishin: num(in_jishin),
+          kyu_chokiSongai: num(in_kyu_choki),
+        },
+        iryohi_kojo: num(in_iryohi),
+        zasson_kojo: num(in_zasson),
+        kifukin_kojo: num(in_kifukin_hoka),
+      },
+    };
+
+    show_result(result_area, () => {
+      const r = calc_furusato(input, tables);
+      if (!r.ok) return message_box(r.riyu);
+      const blocks = render_furusato_result(r, tables);
+      if (shogai_warn) {
+        blocks.unshift(
+          warn_line("障害者の人数が扶養親族の人数を超えています。超えた分は計算に入れていません。"),
+        );
+      }
+      return blocks;
+    });
+  }
+
+  const all_inputs = [
+    in_nen,
+    in_kyuyo,
+    in_shakai_hoken,
+    in_haigusha_umu,
+    in_haigusha_shotoku,
+    in_haigusha_nenrei,
+    in_16miman,
+    in_ippan,
+    in_tokutei,
+    in_rojin,
+    in_dokyo_rojin,
+    in_jigyo,
+    in_fudosan,
+    in_nenkin,
+    in_sonota,
+    ...bunri_els.flatMap((b) => [b.in_shotoku, b.in_kazei]),
+    in_taishoku,
+    in_shin_seimei,
+    in_kyu_seimei,
+    in_shin_nenkin,
+    in_kyu_nenkin,
+    in_kaigo_iryo,
+    in_jishin,
+    in_kyu_choki,
+    in_shokibo,
+    in_iryohi,
+    in_zasson,
+    in_kifukin_hoka,
+    in_honnin_shogaisha,
+    in_honnin_hitorioya,
+    in_shogai_ippan,
+    in_shogai_tokubetsu,
+    in_shogai_dokyo,
+    in_tokutei_shotoku1,
+    in_tokutei_shotoku2,
+  ];
+  for (const el of all_inputs) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+  in_honnin_kafu.input.addEventListener("change", recalc);
+  in_honnin_kinro.input.addEventListener("change", recalc);
+
+  root.replaceChildren(
+    page_title("ふるさと納税", "限度額の目安（正式方式と簡易方式）"),
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/**
+ * 逆算・按分の途中の金額を表示する。
+ * 限度額そのものは1,000円未満切捨て済みだが、20%上限の逆算や3つの控除の内訳には
+ * 円未満の端数が出る。法令の端数規定ではないので、画面では四捨五入して見せる。
+ */
+function format_en_marume(n) {
+  return `${format_number(Math.round(n))}円`;
+}
+
+/** ふるさと納税の結果・計算過程・根拠を組み立てる */
+function render_furusato_result(r, tables) {
+  const engine = r.engine;
+  const s = r.seishiki;
+  const blocks = [];
+
+  // ★適用年分・住民税の年度は必ず表示する（設計原則6）
+  blocks.push(
+    h(
+      "p",
+      { class: "block__lead" },
+      `${r.tekiyo_nenbun_hyoji}　／　住民税：${r.juminzei_nendo_hyoji}`,
+    ),
+  );
+
+  if (s.uchiwake && !s.uchiwake.jiko_futan_ni_osamaru) {
+    blocks.push(warn_line("自己負担は2,000円ちょうどにはなりません（下の内訳を見てください）。"));
+  }
+
+  if (r.kojo_nashi) {
+    blocks.push(message_box("控除される寄附額はありません。"));
+  } else {
+    blocks.push(
+      result_card("ふるさと納税の限度額（正式方式）", format_en(s.gendo_gaku), [
+        { label: "簡易方式の限度額", value: format_en(r.kani.gendo_gaku) },
+        { label: "正式方式との差額", value: format_en(r.sagaku) },
+      ]),
+    );
+  }
+
+  const steps = [
+    { label: "給与所得", value: format_en(engine.kyuyo_shotoku) },
+    { label: "合計所得金額（所得税）", value: format_en(engine.gokei_shotoku_kingaku) },
+    { label: "合計所得金額（住民税）", value: format_en(engine.gokei_shotoku_kingaku_juminzei) },
+    { label: "所得控除の合計（所得税）", value: format_en(engine.shotokuzei.shotoku_kojo_gokei) },
+    { label: "所得控除の合計（住民税）", value: format_en(engine.juminzei.shotoku_kojo_gokei) },
+    {
+      label: "課税総所得金額（所得税）",
+      value: format_en(engine.shotokuzei.kazei_sogo_shotoku_kingaku),
+    },
+    {
+      label: "課税総所得金額（住民税）",
+      value: format_en(engine.juminzei.kazei_sogo_shotoku_kingaku),
+    },
+    {
+      label: "人的控除差調整額",
+      value: format_en(engine.juminzei.jinteki_kojo_sa_chosei_gaku),
+      note: "地方税法37条の2第11項1号",
+    },
+    {
+      label: "割合表を引く金額",
+      value: format_en(s.hikizuru_gaku),
+      note: "課税総所得金額（住民税） − 人的控除差調整額",
+    },
+    {
+      label: "適用する割合",
+      value: s.wariai_percent === null ? "―" : `${s.wariai_percent}％`,
+      note: s.wariai_konkyo ?? "該当する号がありません",
+    },
+    {
+      label: "住民税の所得割額（調整控除後）",
+      value: format_en(engine.juminzei.shotokuwari.gokei),
+    },
+    {
+      label: "上限A（特例控除20％からの逆算）",
+      value: format_en_marume(s.joge.A),
+      note: s.kimete === "A" ? "これが決め手です" : null,
+    },
+    {
+      label: "上限B（寄附金額の30％）",
+      value: format_en_marume(s.joge.B),
+      note: s.kimete === "B" ? "これが決め手です" : null,
+    },
+    {
+      label: "上限C（所得税の寄附金控除40％）",
+      value: format_en_marume(s.joge.C),
+      note: s.kimete === "C" ? "これが決め手です" : null,
+    },
+  ];
+
+  if (s.uchiwake) {
+    steps.push(
+      { label: "所得税の軽減額", value: format_en_marume(s.uchiwake.shotokuzei) },
+      { label: "住民税の基本分", value: format_en_marume(s.uchiwake.juminzei_kihon) },
+      { label: "住民税の特例分", value: format_en_marume(s.uchiwake.juminzei_tokurei) },
+      {
+        label: "3つの控除の合計",
+        value: format_en_marume(s.uchiwake.gokei),
+        note: s.uchiwake.jiko_futan_ni_osamaru
+          ? "「限度額 − 自己負担額」と一致します"
+          : "「限度額 − 自己負担額」と一致しません。差が自己負担に上乗せされます",
+      },
+      { label: "限度額 − 自己負担額", value: format_en(s.uchiwake.taisho) },
+    );
+  }
+
+  blocks.push(breakdown(steps));
+
+  blocks.push(
+    note_block("簡易方式（民間の近似）", [
+      "簡易方式は法令の方式ではありません。民間のシミュレーターでよく使われる近似で、正式方式が住民税の課税総所得金額から人的控除差調整額を控除した金額で割合表を引くのに対し、簡易方式は所得税ベースの課税総所得金額でそのまま割合表を引きます。",
+      `割合表を引く金額（所得税の課税総所得金額）：${format_en(r.kani.hikizuru_gaku)}`,
+      `適用する割合：${r.kani.wariai_percent === null ? "―" : `${r.kani.wariai_percent}％`}`,
+      `限度額（簡易方式）：${format_en(r.kani.gendo_gaku)}`,
+      `正式方式との差額（正式 − 簡易）：${format_en(r.sagaku)}`,
+    ]),
+  );
+
+  blocks.push(
+    note_block(
+      "ワンストップ特例について",
+      [
+        "ワンストップ特例を使っても限度額は変わりません。ただし寄附先が6団体以上になったときや、医療費控除などで確定申告をしたときは特例が無効になります。",
+      ],
+    ),
+  );
+
+  blocks.push(
+    note_block("このツールでは扱わないもの（要相談）", [
+      "住民税の非課税限度額",
+      "先物取引に係る雑所得等（地方税法附則35条の4）",
+      "税額控除（住宅ローン控除・配当控除・外国税額控除等）",
+      "ワンストップ特例そのものの計算（申請手続の要否のみ上に記載）",
+      "分離課税の所得の取得費・特別控除・損益通算・繰越控除・軽減税率",
+      "所得控除が総所得金額を超える場合",
+      "指定都市かどうか（限度額は変わりません）",
+    ]),
+  );
+
+  if (r.chui.length > 0) blocks.push(note_block("注意", r.chui));
+
+  blocks.push(
+    note_block("根拠", [
+      ...tables.furusato["出典"].map((s2) => s2["名称"]),
+      `数値の最終確認日：${format_hizuke(tables.furusato["最終確認日"])}`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ---------------------------------------------------------------- リンク集画面
 
 async function render_link_shu() {
@@ -1824,6 +2404,7 @@ const ROUTES = {
   "/toroku-menkyozei": render_toroku_menkyozei,
   "/entaizei": render_entaizei,
   "/gengo": render_gengo,
+  "/furusato": render_furusato,
   "/link-shu": render_link_shu,
   "/hojinzei-hayami": render_hojinzei_hayami,
   "/koushin": render_koushin,

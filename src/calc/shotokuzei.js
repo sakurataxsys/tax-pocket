@@ -621,9 +621,12 @@ export function calc_shotokuzei_engine(input, tables) {
     bunri,
     input.taishoku_shotoku_kingaku ?? 0,
   );
-  // 総所得金額等（寄附金の30%上限の分母）
-  const soshotoku_kingaku_to =
-    sogo + bunri.reduce((a, b) => a + b["kazei_hyojun"], 0);
+  // ★かつてここで「総所得金額等」（分離課税を特別控除【後】で集計した金額）を返していたが、
+  //   ふるさと納税の寄附金額の30%・40%の上限の分母としては誤りだったので削除した。
+  //   正しい分母は特別控除【前】で集計した合計所得金額のほう（地方税法附則34条2項・3項4号が
+  //   37条の2第1項の「山林所得金額」を「長期譲渡所得の金額」を含むものに読み替える。
+  //   同条2項が「長期譲渡所得の金額」を特別控除をしないで計算した金額と定義している）。
+  //   → 30%は gokei_shotoku_kingaku_juminzei、40%は gokei_shotoku_kingaku を使う。判断ログ D-29。
 
   if (chosei.gokei > 0) chui.push("所得金額調整控除を適用しました。");
   if (bunri.some((b) => b["shotoku_kingaku"] > 0)) {
@@ -783,7 +786,6 @@ export function calc_shotokuzei_engine(input, tables) {
     bunri_meisai: bunri,
     gokei_shotoku_kingaku: gokei_shotoku.shotokuzei,
     gokei_shotoku_kingaku_juminzei: gokei_shotoku.juminzei,
-    soshotoku_kingaku_to,
 
     shotokuzei: {
       kiso_kojo: kiso.kingaku,

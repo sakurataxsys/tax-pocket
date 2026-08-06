@@ -70,7 +70,16 @@ export async function load_gengo() {
   return load_data("gengo");
 }
 
-/** 所得税エンジンに必要なデータをまとめて読む（画面はまだ無く、ふるさと納税から呼ぶ） */
+/** ふるさと納税の計算に必要なデータをまとめて読む（所得税エンジン＋割合表） */
+export async function load_furusato_tables() {
+  const [tables, furusato] = await Promise.all([
+    load_shotokuzei_tables(),
+    load_data("furusato"),
+  ]);
+  return { ...tables, furusato };
+}
+
+/** 所得税エンジンに必要なデータをまとめて読む（画面はふるさと納税から呼ぶ） */
 export async function load_shotokuzei_tables() {
   const [shotokuzei, juminzei, bunri_kazei, income_tax] = await Promise.all([
     load_data("shotokuzei"),

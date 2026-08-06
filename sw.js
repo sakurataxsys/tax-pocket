@@ -10,7 +10,7 @@
 
 // ★src/version.js の APP_VERSION と同じ文字列にする（tests/version.test.js が一致を検査する）。
 //   画面に出す版は APP_VERSION（＝シェルの中身）であって、この定数ではない。理由は src/version.js に書いた。
-const CACHE_VERSION = "v13";
+const CACHE_VERSION = "v14";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
@@ -33,6 +33,7 @@ const SHELL = [
   "./src/calc/gengo.js",
   "./src/calc/version_pick.js",
   "./src/calc/shotokuzei.js",
+  "./src/calc/furusato.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon-180.png",
@@ -60,6 +61,7 @@ const DATA_FILES = [
   "./data/shotokuzei.json",
   "./data/juminzei.json",
   "./data/bunri_kazei.json",
+  "./data/furusato.json",
 ];
 
 const DATA_TIMEOUT_MS = 2000;
