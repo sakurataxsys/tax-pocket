@@ -7,7 +7,7 @@
 //   反映されていない端末はそのまま反映されていないと見える。
 //
 // ★sw.js の CACHE_VERSION と必ず同じ文字列にする（tests/version.test.js が一致を検査する）。
-export const APP_VERSION = "v12";
+export const APP_VERSION = "v13";
 
 // 「更新の確認」画面に並べる数値表。
 //

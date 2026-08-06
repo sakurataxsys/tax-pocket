@@ -46,15 +46,21 @@ const tables = {
   ),
 };
 
-// 令和7年分・令和8年分の版（テストの既定年分）
-const sv = pick_version(tables.shotokuzei["版"], 2026);
-const jv = pick_version(tables.juminzei["版"], 2026);
-const rv = pick_version(tables.income_tax["版"], 2026);
+// ★このファイルの既定年分は【令和7年分】。
+//   令和8年分は、給与所得控除・基礎控除・扶養親族等の所得要件が令和8年度改正で
+//   まるごと入れ替わっている（判断ログ D-28）。既存の期待値は令和7年分の条文から
+//   導いたものなので、既定を令和7年分に固定し、令和8年分は別に書く。
+const NEN_R7 = 2025;
+const NEN_R8 = 2026;
+
+const sv = pick_version(tables.shotokuzei["版"], NEN_R7);
+const jv = pick_version(tables.juminzei["版"], NEN_R7);
+const rv = pick_version(tables.income_tax["版"], NEN_R7);
 
 /** エンジンの既定入力（各テストで必要な項目だけ上書きする） */
 function input(over = {}) {
   return {
-    nen: 2026,
+    nen: NEN_R7,
     shitei_toshi: false,
     kyuyo_shunyu: 0,
     nenkin_zasshotoku: 0,
@@ -278,6 +284,42 @@ describe("② 境界値", () => {
       // 1,900,000円：4,000円刻み側（下限1,900,000円に速算式。190万円以下は控除65万円定額）
       // 1,900,000−650,000＝1,250,000円
       assert.equal(calc_kyuyo_shotoku(1900000, sv["給与所得控除"]).kingaku, 1250000);
+    });
+
+    // ★令和8年分の別表第五は 2,026,000 から刻みが始まり、最初の1区分だけ幅が2,000円
+    //   （2,026,000〜2,028,000）で、以後 2,028,000 から4,000円刻みに揃う。
+    //   floor(収入/4,000)×4,000 で下限を取ると、この区間だけ2,000円低い下限を拾い、
+    //   給与所得を2,000円少なく返す。原文の別表第五から導いた期待値を直接置く。
+    describe("令和8年分の別表第五は刻みの開始が4,000円の倍数ではない（所法28条4項・別表第五）", () => {
+      const b8 = pick_version(tables.shotokuzei["版"], NEN_R8)["給与所得控除"];
+      const k = (shunyu) => calc_kyuyo_shotoku(shunyu, b8).kingaku;
+
+      test("2,025,999円までは「収入から定額を引く区間」（収入−69万円）", () => {
+        assert.equal(k(2025999), 2025999 - 690000); // 1,335,999
+      });
+      test("2,026,000円〜2,027,999円は幅2,000円の1区分で、いずれも1,336,000円", () => {
+        assert.equal(k(2026000), 1336000);
+        assert.equal(k(2026001), 1336000);
+        assert.equal(k(2027999), 1336000);
+      });
+      test("2,028,000円から4,000円刻みに揃う（2,028,000〜2,031,999は1,338,000円）", () => {
+        assert.equal(k(2028000), 1338000);
+        assert.equal(k(2031999), 1338000);
+        assert.equal(k(2032000), 1342000);
+      });
+      test("691,000円未満は所得0、691,000円から「収入−69万円」に入る", () => {
+        assert.equal(k(690999), 0);
+        assert.equal(k(691000), 1000);
+      });
+      test("最低保障69万円は収入が203万円台まで効く（所法28条3項1号の括弧書き）", () => {
+        // 8万＋収入×30% が69万円に達するのは収入2,033,334円から。
+        // ただし別表第五の区間ではその手前で刻みに入るため、
+        // 最低保障が速算式より効いていることを刻みの下限で確かめる。
+        // 下限2,032,000：8万＋2,032,000×30%＝689,600＜69万 → 控除69万 → 所得1,342,000
+        assert.equal(k(2032000), 2032000 - 690000);
+        // 下限2,036,000：8万＋2,036,000×30%＝690,800＞69万 → 控除690,800 → 所得1,345,200
+        assert.equal(k(2036000), 2036000 - 690800);
+      });
     });
 
     test("3,600,000円で速算表の行が30%区分から20%区分へ切り替わる", () => {
@@ -565,56 +607,92 @@ describe("② 境界値", () => {
 // -------------------------------------------------------- ③ 改正前後の分岐
 
 describe("③ 改正前後の分岐", () => {
-  test("合計所得100万円の基礎控除95万円は令和7・8・9年分いずれも変わらない（恒久措置の回帰テスト）", () => {
-    // 措法41条の16の2の加算額（132万円以下37万円）自体は時限で動かない。
-    // 動くのは柱書のしきい値（令和7・8年分655万円→令和9年分以後132万円）だけ。
-    const sv2025 = pick_version(tables.shotokuzei["版"], 2025);
-    const sv2026 = pick_version(tables.shotokuzei["版"], 2026);
-    const sv2027 = pick_version(tables.shotokuzei["版"], 2027);
-    for (const v of [sv2025, sv2026, sv2027]) {
-      assert.equal(calc_kiso_kojo(1000000, v["基礎控除"]).kingaku, 950000);
-    }
+  // 令和8年度改正（令和8年法律第12号）の適用時期は「令和八年分以後の所得税について適用し、
+  // 令和七年分以前の所得税については、なお従前の例による」（同法附則2条・3条・9条）。
+  // 以下の期待値は、令和7年分＝改正前の条文、令和8年分＝改正後の条文から手で計算している。
+  const sv_r7 = pick_version(tables.shotokuzei["版"], NEN_R7);
+  const sv_r8 = pick_version(tables.shotokuzei["版"], NEN_R8);
+
+  test("基礎控除の本則は令和7年分58万円・令和8年分62万円（所法86条1項1号）", () => {
+    // 合計所得2,350万円超の帯（48/32/16万円）は改正されていない
+    assert.equal(calc_kiso_kojo(23500000, sv_r7["基礎控除"]).kingaku, 580000);
+    assert.equal(calc_kiso_kojo(23500000, sv_r8["基礎控除"]).kingaku, 620000);
+    assert.equal(calc_kiso_kojo(24000000, sv_r7["基礎控除"]).kingaku, 480000);
+    assert.equal(calc_kiso_kojo(24000000, sv_r8["基礎控除"]).kingaku, 480000);
   });
 
-  test("合計所得300万・400万・600万円は令和9年分から柱書のしきい値が下がり基礎控除58万円になる", () => {
-    const sv7_8 = pick_version(tables.shotokuzei["版"], 2026);
-    const sv9 = pick_version(tables.shotokuzei["版"], 2027);
+  test("基礎控除の上乗せは令和8年分から4区分→2区分になる（措法41条の16の2第1項1号）", () => {
+    // 令和7年分：132万以下37万／336万以下30万／489万以下10万／超5万（本則58万に加算）
+    // 令和8年分：489万以下42万／超5万（本則62万に加算）。柱書のしきい値655万円は据置き
     const cases = [
-      [3000000, 880000], // 令和7・8年分：58万＋加算30万＝88万
-      [4000000, 680000], // 令和7・8年分：58万＋加算10万＝68万
-      [6000000, 630000], // 令和7・8年分：58万＋加算5万＝63万
+      [1000000, 950000, 1040000], // 58+37=95万 ／ 62+42=104万
+      [3000000, 880000, 1040000], // 58+30=88万 ／ 62+42=104万
+      [4000000, 680000, 1040000], // 58+10=68万 ／ 62+42=104万
+      [4890000, 680000, 1040000], // 489万ちょうど：どちらも上の帯の最後
+      [4890001, 630000, 670000],  // 489万1円：58+5=63万 ／ 62+5=67万
+      [6000000, 630000, 670000],
     ];
-    for (const [gokei, expected_7_8] of cases) {
-      assert.equal(calc_kiso_kojo(gokei, sv7_8["基礎控除"]).kingaku, expected_7_8);
-      // 令和9年分：柱書のしきい値132万円を超えるため特例が外れ、本則58万円のみ
-      assert.equal(calc_kiso_kojo(gokei, sv9["基礎控除"]).kingaku, 580000);
+    for (const [gokei, r7, r8] of cases) {
+      assert.equal(calc_kiso_kojo(gokei, sv_r7["基礎控除"]).kingaku, r7, `令和7年分 合計所得${gokei}`);
+      assert.equal(calc_kiso_kojo(gokei, sv_r8["基礎控除"]).kingaku, r8, `令和8年分 合計所得${gokei}`);
     }
   });
 
-  test("合計所得700万円は令和7・8年分と令和9年分のどちらも58万円で一致する", () => {
-    const sv7_8 = pick_version(tables.shotokuzei["版"], 2026);
-    const sv9 = pick_version(tables.shotokuzei["版"], 2027);
-    assert.equal(calc_kiso_kojo(7000000, sv7_8["基礎控除"]).kingaku, 580000);
-    assert.equal(calc_kiso_kojo(7000000, sv9["基礎控除"]).kingaku, 580000);
+  test("柱書のしきい値655万円の境界は令和7年分・令和8年分のどちらにもある", () => {
+    assert.equal(calc_kiso_kojo(6550000, sv_r7["基礎控除"]).kingaku, 630000); // 58+5
+    assert.equal(calc_kiso_kojo(6550001, sv_r7["基礎控除"]).kingaku, 580000); // 特例が外れる
+    assert.equal(calc_kiso_kojo(6550000, sv_r8["基礎控除"]).kingaku, 670000); // 62+5
+    assert.equal(calc_kiso_kojo(6550001, sv_r8["基礎控除"]).kingaku, 620000); // 特例が外れる
   });
 
-  test("6,550,000円と6,550,001円は、令和9年分ではどちらも基礎控除58万円になる", () => {
-    // 令和7・8年分では特例の柱書しきい値が655万円のため、この2点に境界が生じる
-    // （630,000円→580,000円。②境界値のテストで確認済み）。
-    // 令和9年分は柱書のしきい値が132万円まで下がっているため、両方とも特例の対象外。
-    const sv9 = pick_version(tables.shotokuzei["版"], 2027);
-    assert.equal(calc_kiso_kojo(6550000, sv9["基礎控除"]).kingaku, 580000);
-    assert.equal(calc_kiso_kojo(6550001, sv9["基礎控除"]).kingaku, 580000);
+  test("給与所得控除は令和8年分から構造ごと変わる（所法28条3項）", () => {
+    // 令和7年分：190万円以下は一律65万円
+    // 令和8年分：360万円以下は「8万円＋収入×30%」、ただし69万円を下回らない
+    const k = (nen, shunyu) =>
+      calc_kyuyo_shotoku(shunyu, pick_version(tables.shotokuzei["版"], nen)["給与所得控除"]).kingaku;
+    // 収入200万円：令和7年分は190万円超の帯に入るので
+    //   控除＝65万＋(200万−190万)×30%＝68万 → 所得132万（下限200万は4,000円の倍数）
+    assert.equal(k(NEN_R7, 2000000), 1320000);
+    // 令和8年分 200万は「収入から定額を引く区間」（69.1万〜202.6万）→ 200万−69万＝131万
+    assert.equal(k(NEN_R8, 2000000), 1310000);
+    // 収入500万円：控除＝116万＋(500万−360万)×20%＝144万（両年分とも同じ算式）
+    assert.equal(k(NEN_R7, 5000000), 5000000 - 1440000);
+    assert.equal(k(NEN_R8, 5000000), 5000000 - 1440000);
+    // 収入900万円：控除195万（別表第五の外・上限帯。両年分とも同じ）
+    assert.equal(k(NEN_R7, 9000000), 9000000 - 1950000);
+    assert.equal(k(NEN_R8, 9000000), 9000000 - 1950000);
+  });
+
+  test("扶養親族の合計所得要件は令和7年分58万円・令和8年分62万円（所法2条1項34号）", () => {
+    // 19歳の子（特定扶養親族）の合計所得を動かし、扶養控除63万円が付くかを見る
+    const fuyo = (nen, gokei) => {
+      const v = pick_version(tables.shotokuzei["版"], nen);
+      return calc_jinteki_kojo(
+        jinteki_base({
+          fuyo_shinzoku: [
+            { nenrei: 19, gokei_shotoku: gokei, shogaisha: null, dokyo_tokubetsu: false, dokyo_rokei_sonzoku: false },
+          ],
+        }),
+        3000000,
+        v["人的控除"],
+      ).meisai.fuyo;
+    };
+    assert.equal(fuyo(NEN_R7, 580000), 630000);
+    assert.equal(fuyo(NEN_R7, 580001), 0); // 令和7年分は58万円を超えると扶養控除が外れる
+    assert.equal(fuyo(NEN_R8, 580001), 630000); // 令和8年分は62万円までなら残る
+    assert.equal(fuyo(NEN_R8, 620000), 630000);
+    assert.equal(fuyo(NEN_R8, 620001), 0);
   });
 
   test("収録していない年分はデータがない旨を返す", () => {
-    const r2024 = calc_shotokuzei_engine(input({ nen: 2024 }), tables);
-    assert.equal(r2024.ok, false);
-    assert.match(r2024.riyu, /収録/);
-
-    const r2010 = calc_shotokuzei_engine(input({ nen: 2010 }), tables);
-    assert.equal(r2010.ok, false);
-    assert.match(r2010.riyu, /収録/);
+    // 収録は令和7年分・令和8年分の2年分だけ。
+    // 令和9年分は所得税のひとり親控除が38万円になり（令和9年1月1日施行）、
+    // 住民税のひとり親控除も33万円になる（令和10年1月1日施行）ため、まだ収録していない。
+    for (const nen of [2010, 2024, 2027, 2030]) {
+      const r = calc_shotokuzei_engine(input({ nen }), tables);
+      assert.equal(r.ok, false, `${nen}年分`);
+      assert.match(r.riyu, /収録/);
+    }
   });
 });
 
@@ -635,8 +713,11 @@ describe("④ データの整合", () => {
     const juminzei_range = coverage(tables.juminzei["版"]);
     const bunri_range = coverage(tables.bunri_kazei["版"]);
 
-    assert.deepEqual(shotokuzei_range, { start: 2025, end: null });
-    assert.deepEqual(juminzei_range, { start: 2025, end: null });
+    // 所得税・住民税は令和7年分と令和8年分の2年分だけを収録する（判断ログ D-28）。
+    // 分離課税の税率は動いていないので開いたままでよい。
+    // エンジンは4つの表すべてに版があるときだけ計算するので、実効範囲は狭いほうで決まる。
+    assert.deepEqual(shotokuzei_range, { start: 2025, end: 2026 });
+    assert.deepEqual(juminzei_range, { start: 2025, end: 2026 });
     assert.deepEqual(bunri_range, { start: 2025, end: null });
   });
 

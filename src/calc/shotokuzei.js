@@ -37,13 +37,19 @@ function find_row(table, value, key) {
   return table.find((r) => r[key] === null || value <= r[key]);
 }
 
-/** 「定額 ＋（値 − 起点）× 率」型の速算表を評価する。 */
+/**
+ * 「定額 ＋（値 − 起点）× 率」型の速算表を評価する。
+ * 行に「最低保障額」があるときは、その額を下回らない
+ * （所法28条3項1号（令和8年分以後）の「六十九万円に満たない場合には、六十九万円」）。
+ */
 function eval_sokusan(table, value, key) {
   const row = find_row(table, value, key);
-  return (
+  const gaku =
     row["定額"] +
-    ((value - row["起点"]) * row["超過分の率パーセント"]) / 100
-  );
+    ((value - row["起点"]) * row["超過分の率パーセント"]) / 100;
+  return row["最低保障額"] !== undefined
+    ? Math.max(gaku, row["最低保障額"])
+    : gaku;
 }
 
 /**
@@ -64,9 +70,16 @@ function floor_to_step(value, step, minus) {
  * 給与所得の金額を求める。所法28条2項・3項・4項。
  *
  * 収入が660万円未満のときは4項により別表第五を使う（3項の速算式ではない）。
- * 別表第五は 651,000円未満→0／651,000〜1,900,000未満→収入−650,000／
- * 1,900,000〜6,600,000未満→4,000円刻みの各区分の下限に3項の速算式を当てた金額、という構造。
- * ★表そのものは持たず、しきい値と刻みから再現している（tools/verify_besshi5.mjs が原文と全行照合する）。
+ * 別表第五は「所得が零となる区間」「収入から定額を引く区間」「刻みの区間（各区分の下限に
+ * 3項の速算式を当てた金額）」の3段でできている。しきい値はすべて data 側に持たせてある。
+ * ★表そのものは持たず、しきい値と刻みから再現している。
+ *   原文との全行照合は `node tools/verify_besshi5.mjs` で行う（年分ごとに回す）。
+ *
+ * ★刻みの区間の下限は「刻みの倍数」とは限らない。
+ *   令和8年分の別表第五は 2,026,000 から始まり、最初の1区分だけ幅が2,000円（2,026,000〜2,028,000）で、
+ *   以後 2,028,000 から4,000円刻みに揃う。単純に floor(収入/4,000)×4,000 とすると
+ *   この区間で下限を2,000円低く取り、給与所得を2,000円少なく返す。
+ *   そこで区間の開始額で下限を止める（令和7年分は開始額1,900,000が4,000の倍数なので何も起きない）。
  *
  * 660万円以上は3項の速算式で、別表第五の備考により1円未満切捨て。
  */
@@ -82,9 +95,10 @@ export function calc_kyuyo_shotoku(shunyu, setting) {
     if (shunyu < b5["収入から定額を引く区間の上限"]) {
       return { kingaku: shunyu - b5["その区間の定額"], besshi5: true };
     }
-    // 4,000円刻みの区分の「下限」に速算式を当てる（＝別表第五の値そのもの）
+    // 刻みの区分の「下限」に速算式を当てる（＝別表第五の値そのもの）
     const kizami = b5["刻み"];
-    const kagen = Math.floor(shunyu / kizami) * kizami;
+    const kaishi = b5["収入から定額を引く区間の上限"]; // ＝刻みの区間の開始額
+    const kagen = Math.max(kaishi, Math.floor(shunyu / kizami) * kizami);
     return { kingaku: kagen - eval_sokusan(sokusan, kagen, "収入の上限"), besshi5: true };
   }
 

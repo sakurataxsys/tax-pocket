@@ -10,7 +10,7 @@
 
 // ★src/version.js の APP_VERSION と同じ文字列にする（tests/version.test.js が一致を検査する）。
 //   画面に出す版は APP_VERSION（＝シェルの中身）であって、この定数ではない。理由は src/version.js に書いた。
-const CACHE_VERSION = "v12";
+const CACHE_VERSION = "v13";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
