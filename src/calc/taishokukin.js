@@ -11,16 +11,7 @@
 //
 // 金額・税率はこのファイルに書かない。すべて data/*.json から受け取る（設計原則3）。
 
-/** 適用年分に対応する版を取り出す。該当する版がなければ null。 */
-export function pick_version(versions, nen) {
-  return (
-    versions.find(
-      (v) =>
-        nen >= v["適用開始年"] &&
-        (v["適用終了年"] === null || nen <= v["適用終了年"]),
-    ) ?? null
-  );
-}
+import { pick_version } from "./version_pick.js";
 
 /**
  * 勤続年数を求める。

@@ -15,7 +15,8 @@ import {
   load_gengo,
 } from "./data.js";
 import { APP_VERSION, KOUSHIN_ICHIRAN } from "./version.js";
-import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
+import { calc_taishokukin } from "./calc/taishokukin.js";
+import { pick_version } from "./calc/version_pick.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
 import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
 import {

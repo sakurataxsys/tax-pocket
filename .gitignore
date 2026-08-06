@@ -30,3 +30,6 @@ Desktop.ini
 
 # ブラウザ検証ツールの出力
 .playwright-mcp/
+
+# サブエージェントの作業メモ（手元だけ。公開リポジトリに載せない）
+.claude/agent-memory-local/

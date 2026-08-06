@@ -69,3 +69,14 @@ export async function load_inshizei_tables() {
 export async function load_gengo() {
   return load_data("gengo");
 }
+
+/** 所得税エンジンに必要なデータをまとめて読む（画面はまだ無く、ふるさと納税から呼ぶ） */
+export async function load_shotokuzei_tables() {
+  const [shotokuzei, juminzei, bunri_kazei, income_tax] = await Promise.all([
+    load_data("shotokuzei"),
+    load_data("juminzei"),
+    load_data("bunri_kazei"),
+    load_data("income_tax_rates"),
+  ]);
+  return { shotokuzei, juminzei, bunri_kazei, income_tax };
+}

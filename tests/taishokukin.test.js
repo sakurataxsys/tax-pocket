@@ -13,9 +13,9 @@ import {
   calc_kinzoku_nensu,
   calc_taishoku_shotoku_kojo,
   judge_kubun,
-  pick_version,
   calc_taishokukin,
 } from "../src/calc/taishokukin.js";
+import { pick_version } from "../src/calc/version_pick.js";
 
 const tables = {
   taishokukin: JSON.parse(
