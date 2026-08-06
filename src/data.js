@@ -64,3 +64,8 @@ export async function load_inshizei_tables() {
   ]);
   return { inshizei, inshizei_hyo };
 }
+
+/** 元号早見表 */
+export async function load_gengo() {
+  return load_data("gengo");
+}

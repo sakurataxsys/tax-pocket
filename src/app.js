@@ -12,6 +12,7 @@ import {
   load_entaizei_tables,
   load_link_shu,
   load_hojinzei_hayami,
+  load_gengo,
 } from "./data.js";
 import { APP_VERSION, KOUSHIN_ICHIRAN } from "./version.js";
 import { calc_taishokukin, pick_version } from "./calc/taishokukin.js";
@@ -29,6 +30,11 @@ import {
   build_kintowari_hyo,
   horitsu_jikko_zeiritsu,
 } from "./calc/hojinzei_hayami.js";
+import {
+  seireki_from_gengo,
+  gengo_from_seireki,
+  calc_nenrei_gaisan,
+} from "./calc/gengo.js";
 import {
   format_en,
   format_number,
@@ -82,6 +88,12 @@ const MENU = [
     path: "#/entaizei",
     name: "延滞税・利子税",
     desc: "納付が遅れた日数から",
+    ready: true,
+  },
+  {
+    path: "#/gengo",
+    name: "元号変換",
+    desc: "元号⇄西暦・年齢の概算",
     ready: true,
   },
   {
@@ -1493,6 +1505,180 @@ function render_hayami(data, kaishi_bi) {
   return blocks;
 }
 
+// ------------------------------------------------------------ 元号変換画面
+
+/** 「令和8年」「令和元年」のように、元号年を1年は「元」で表す */
+function nengo_hyoji(mei, nen) {
+  return `${mei}${nen === 1 ? "元" : nen}年`;
+}
+
+async function render_gengo() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let data;
+  try {
+    data = await load_gengo();
+  } catch {
+    root.replaceChildren(
+      page_title("元号変換"),
+      message_box(
+        "元号早見表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  const list = data["元号一覧"];
+  const this_year = new Date().getFullYear();
+
+  // 開いた時点の元号・元号年を既定値にする（見本アプリの「今日」相当）
+  const kyou = gengo_from_seireki(this_year, list, this_year);
+  const kyou_kouho = kyou.ok ? kyou.kouho[kyou.kouho.length - 1] : null;
+
+  const in_muki = select_input(
+    [
+      { value: "wareki", label: "和暦から変換" },
+      { value: "seireki", label: "西暦から変換" },
+    ],
+    "wareki",
+  );
+  const in_mei = select_input(
+    [...list].reverse().map((g) => ({ value: g["名称"], label: g["名称"] })),
+    kyou_kouho?.mei ?? "令和",
+  );
+  const in_gengo_nen = number_input({ min: 1, value: kyou_kouho?.gengo_nen ?? "" });
+  const in_seireki = number_input({ min: list[0]["開始西暦年"], value: this_year });
+
+  const wareki_field = h("div", { class: "field-row" },
+    field("元号", in_mei),
+    field("年", in_gengo_nen),
+  );
+  const seireki_field = field("西暦（年）", in_seireki);
+  const seireki_wrap = h("div", { hidden: true }, seireki_field);
+  const result_area = h("div", { class: "result-area" });
+
+  const form = h("section", { class: "form" },
+    field("変換の方向", in_muki),
+    wareki_field,
+    seireki_wrap,
+  );
+
+  function recalc() {
+    const is_seireki = in_muki.value === "seireki";
+    wareki_field.hidden = is_seireki;
+    seireki_wrap.hidden = !is_seireki;
+
+    if (is_seireki) {
+      const seireki = Number(in_seireki.value || 0);
+      if (seireki <= 0) {
+        result_area.replaceChildren(message_box("西暦年を入力してください。"));
+        return;
+      }
+      show_result(result_area, () => {
+        const r = gengo_from_seireki(seireki, list, this_year);
+        return r.ok
+          ? render_gengo_result({ muki: "seireki", seireki, r }, data, this_year)
+          : message_box(r.riyu);
+      });
+    } else {
+      const mei = in_mei.value;
+      const gengo_nen = Number(in_gengo_nen.value || 0);
+      if (gengo_nen <= 0) {
+        result_area.replaceChildren(message_box("元号と年を入力してください。"));
+        return;
+      }
+      show_result(result_area, () => {
+        const r = seireki_from_gengo(mei, gengo_nen, list, this_year);
+        return r.ok
+          ? render_gengo_result({ muki: "wareki", mei, gengo_nen, r }, data, this_year)
+          : message_box(r.riyu);
+      });
+    }
+  }
+
+  for (const el of [in_muki, in_mei, in_gengo_nen, in_seireki]) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+
+  root.replaceChildren(
+    page_title("元号変換", "元号⇄西暦・年齢の概算（年単位）"),
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/** 元号変換の結果・計算過程・根拠を組み立てる */
+function render_gengo_result(input, data, this_year) {
+  const r = input.r;
+  const blocks = [];
+
+  if (r.keikoku) blocks.push(warn_line(r.keikoku));
+
+  const seireki = input.muki === "wareki" ? r.seireki : input.seireki;
+  const nenrei = seireki <= this_year ? calc_nenrei_gaisan(seireki, this_year) : null;
+  const nenrei_hyoji =
+    nenrei?.ok && nenrei.saitei === nenrei.saiko
+      ? `${nenrei.saiko}歳（概算）`
+      : nenrei?.ok
+        ? `満${nenrei.saitei}〜${nenrei.saiko}歳`
+        : null;
+  const nenrei_sub = nenrei_hyoji
+    ? [{ label: "生まれ年だとすると（概算）", value: nenrei_hyoji }]
+    : [];
+
+  if (input.muki === "wareki") {
+    blocks.push(
+      result_card(nengo_hyoji(input.mei, input.gengo_nen), `西暦${seireki}年`, nenrei_sub),
+      breakdown([
+        {
+          label: "西暦",
+          value: `${seireki}年`,
+          note: `${input.mei}の開始西暦年 ＋ ${nengo_hyoji(input.mei, input.gengo_nen)} − 1年`,
+        },
+      ]),
+    );
+  } else {
+    const kouho_hyoji = r.kouho.map((k) => nengo_hyoji(k.mei, k.gengo_nen)).join("・");
+    blocks.push(
+      result_card(`西暦${seireki}年`, kouho_hyoji, nenrei_sub),
+      breakdown(
+        r.kouho.map((k) => ({
+          label: k.mei,
+          value: nengo_hyoji(k.mei, k.gengo_nen).replace(k.mei, ""),
+          note: `${k.mei}の開始西暦年からの年数`,
+        })),
+      ),
+    );
+  }
+
+  if (seireki > this_year) {
+    blocks.push(
+      note_block("年齢について", ["入力が今年より先の年のため、年齢は計算していません。"]),
+    );
+  }
+
+  blocks.push(
+    note_block("このツールでは扱わないもの（要相談）", [
+      "月日を含む正確な変換（改元日をまたぐ月日の判定）",
+      "明治5年以前の太陰太陽暦（旧暦）",
+      "干支",
+    ]),
+    note_block("年齢の概算について", [
+      "入力した年を「生まれ年」とみなした場合の、今年時点での満年齢の幅です。" +
+        "誕生日を迎えているかどうかで1歳ぶれるため、単一の値ではなく幅で表示しています。",
+    ]),
+    note_block("根拠", [
+      ...data["出典"].map((s) => s["名称"]),
+      `元号一覧の最終確認日：${format_hizuke(data["最終確認日"])}`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ---------------------------------------------------------------- リンク集画面
 
 async function render_link_shu() {
@@ -1636,6 +1822,7 @@ const ROUTES = {
   "/inshizei": render_inshizei,
   "/toroku-menkyozei": render_toroku_menkyozei,
   "/entaizei": render_entaizei,
+  "/gengo": render_gengo,
   "/link-shu": render_link_shu,
   "/hojinzei-hayami": render_hojinzei_hayami,
   "/koushin": render_koushin,
