@@ -89,3 +89,12 @@ export async function load_shotokuzei_tables() {
   ]);
   return { shotokuzei, juminzei, bunri_kazei, income_tax };
 }
+
+/** 相続税の概算の計算に必要なデータをまとめて読む */
+export async function load_sozokuzei_tables() {
+  const [sozokuzei, sozokuzei_hyo] = await Promise.all([
+    load_data("sozokuzei"),
+    load_data("sozokuzei_hyo"),
+  ]);
+  return { sozokuzei, sozokuzei_hyo };
+}

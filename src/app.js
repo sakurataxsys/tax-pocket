@@ -14,10 +14,12 @@ import {
   load_hojinzei_hayami,
   load_gengo,
   load_furusato_tables,
+  load_sozokuzei_tables,
 } from "./data.js";
 import { APP_VERSION, KOUSHIN_ICHIRAN } from "./version.js";
 import { calc_taishokukin } from "./calc/taishokukin.js";
 import { calc_furusato } from "./calc/furusato.js";
+import { calc_sozokuzei, zoyo_kasan_kikan, SOZOKUNIN_MAX } from "./calc/sozokuzei.js";
 import { pick_version } from "./calc/version_pick.js";
 import { calc_genka_shokyaku } from "./calc/genka_shokyaku.js";
 import { calc_inshizei, pick_bunsho, nyuryoku_setting } from "./calc/inshizei.js";
@@ -104,6 +106,12 @@ const MENU = [
     path: "#/furusato",
     name: "ふるさと納税",
     desc: "限度額の目安（計算方式を選べます）",
+    ready: true,
+  },
+  {
+    path: "#/sozokuzei",
+    name: "相続税",
+    desc: "概算（評価額は入力値です）",
     ready: true,
   },
   {
@@ -2300,6 +2308,286 @@ function render_furusato_result(r, houshiki, tables) {
   return blocks;
 }
 
+// ------------------------------------------------------------------ 相続税画面
+
+/** 人数欄の値を読む（相続税用。read_ninzu と同型。上限は SOZOKUNIN_MAX） */
+function read_sozokunin(el) {
+  const n = Math.floor(Number(el.value) || 0);
+  return Math.min(Math.max(n, 0), SOZOKUNIN_MAX);
+}
+
+async function render_sozokuzei() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let tables;
+  try {
+    tables = await load_sozokuzei_tables();
+  } catch {
+    root.replaceChildren(
+      page_title("相続税"),
+      message_box(
+        "税率表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  // ---- 常時表示欄
+  const in_bi = date_input(today_iso());
+  const in_zaisan = money_input({ placeholder: "0" });
+  const in_hokenkin = money_input({ placeholder: "0" });
+  const in_taishokukin = money_input({ placeholder: "0" });
+  const in_saimu = money_input({ placeholder: "0" });
+  const in_haigusha = radio_input(
+    [
+      { value: "ari", label: "いる" },
+      { value: "nashi", label: "いない" },
+    ],
+    "ari",
+  );
+  const in_jisshi = number_input({ min: 0, max: SOZOKUNIN_MAX, value: 0 });
+  const in_yoshi = number_input({ min: 0, max: SOZOKUNIN_MAX, value: 0 });
+  const in_mago_yoshi = number_input({ min: 0, max: SOZOKUNIN_MAX, value: 0 });
+  const in_shibo_ko = number_input({ min: 0, max: 1, value: 0 });
+  const in_daishu_mago = number_input({ min: 0, max: SOZOKUNIN_MAX, value: 0 });
+  const in_sonzoku = number_input({ min: 0, max: SOZOKUNIN_MAX, value: 0 });
+  const in_kyodai = number_input({ min: 0, max: SOZOKUNIN_MAX, value: 0 });
+
+  const sonzoku_wrap = h("div", { hidden: true }, field("直系尊属（父母）の人数（人）", in_sonzoku));
+  const kyodai_wrap = h("div", { hidden: true }, field("兄弟姉妹の人数（人）", in_kyodai));
+
+  // ---- 「詳しく入力」の各欄。贈与財産の欄はラベルに対象期間を出す（相続開始日から決まる）
+  const in_zoyo_3nen = money_input({ placeholder: "0" });
+  const in_zoyo_choka = money_input({ placeholder: "0" });
+  const in_zoyozei = money_input({ placeholder: "0" });
+
+  const zoyo_3nen_field = field("贈与財産の価額（円）", in_zoyo_3nen);
+  const zoyo_3nen_label = zoyo_3nen_field.querySelector(".field__label");
+  const zoyo_choka_field = field("うち3年より前の贈与（円）", in_zoyo_choka, "―");
+  const zoyo_choka_note = zoyo_choka_field.querySelector(".field__note");
+  const zoyo_choka_wrap = h("div", { hidden: true }, zoyo_choka_field);
+
+  const details = h(
+    "details",
+    { class: "details" },
+    h("summary", {}, "詳しく入力"),
+    zoyo_3nen_field,
+    zoyo_choka_wrap,
+    field("上記の贈与に課された贈与税額（円）", in_zoyozei),
+  );
+
+  const result_area = h("div", { class: "result-area" });
+
+  const form = h(
+    "section",
+    { class: "form" },
+    field("相続開始日", in_bi),
+    field(
+      "財産の評価額（保険金・退職金を除く）（円）",
+      in_zaisan,
+      "相続税評価額を入力してください。評価そのものはこのツールでは行いません",
+    ),
+    field("生命保険金の合計額（円）", in_hokenkin, "相続人以外が受け取った分は含めません"),
+    field("死亡退職金の合計額（円）", in_taishokukin, "相続人以外が受け取った分は含めません"),
+    field("債務・葬式費用の合計額（円）", in_saimu),
+    field("配偶者", in_haigusha),
+    field("子の人数（実子）（人）", in_jisshi),
+    field("養子の人数（人）", in_yoshi),
+    field("うち孫養子の人数（人）", in_mago_yoshi),
+    field(
+      "先に亡くなった子の人数（人）",
+      in_shibo_ko,
+      "代襲相続。先に亡くなった子が2人以上いる場合は扱いません",
+    ),
+    field("その子（孫）の人数（人）", in_daishu_mago),
+    sonzoku_wrap,
+    kyodai_wrap,
+    details,
+  );
+
+  /** 相続開始日から、子系統・直系尊属の人数欄の表示・非表示を切り替える */
+  function apply_ninzu_visibility() {
+    const jisshi = read_sozokunin(in_jisshi);
+    const yoshi = read_sozokunin(in_yoshi);
+    const shibo_ko = read_sozokunin(in_shibo_ko);
+    const daishu_mago = read_sozokunin(in_daishu_mago);
+    const sonzoku = read_sozokunin(in_sonzoku);
+
+    const ko_kei = jisshi + yoshi + (shibo_ko > 0 ? daishu_mago : 0);
+    sonzoku_wrap.hidden = ko_kei > 0;
+    kyodai_wrap.hidden = !(ko_kei === 0 && sonzoku === 0);
+  }
+
+  /** 相続開始日から、贈与財産欄のラベル・表示・補足を組み替える */
+  function apply_zoyo_labels() {
+    const bi = /^\d{4}-\d{2}-\d{2}$/.test(in_bi.value) ? in_bi.value : today_iso();
+    const version =
+      pick_version(tables.sozokuzei["版"], Number(bi.slice(0, 4))) ?? tables.sozokuzei["版"][0];
+    const kikan = zoyo_kasan_kikan(bi, version["贈与加算"]);
+
+    zoyo_3nen_label.textContent =
+      `贈与財産の価額（${format_hizuke(kikan.san_nen_mae)}〜${format_hizuke(bi)}）（円）`;
+    zoyo_choka_wrap.hidden = !kikan.choka_kikan_ari;
+    zoyo_choka_note.textContent = "合計額から100万円を控除して加算します";
+    zoyo_choka_note.hidden = !kikan.choka_kojo_ari;
+  }
+
+  function recalc() {
+    apply_ninzu_visibility();
+    apply_zoyo_labels();
+
+    const num = (el) => Number(String(el.value).replace(/[^0-9]/g, "") || 0);
+    const zaisan = num(in_zaisan);
+    const hokenkin = num(in_hokenkin);
+    const taishokukin_gaku = num(in_taishokukin);
+
+    if (zaisan <= 0 && hokenkin <= 0 && taishokukin_gaku <= 0) {
+      result_area.replaceChildren(message_box("財産の評価額を入力してください。"));
+      return;
+    }
+
+    const input = {
+      sozoku_kaishi_bi: in_bi.value,
+      zaisan,
+      hokenkin,
+      taishokukin: taishokukin_gaku,
+      saimu: num(in_saimu),
+      zoyo_3nen: num(in_zoyo_3nen),
+      zoyo_choka: num(in_zoyo_choka),
+      zoyozei: num(in_zoyozei),
+      kosei: {
+        haigusha: in_haigusha.value === "ari",
+        jisshi: read_sozokunin(in_jisshi),
+        yoshi: read_sozokunin(in_yoshi),
+        mago_yoshi: read_sozokunin(in_mago_yoshi),
+        shibo_ko: read_sozokunin(in_shibo_ko),
+        daishu_mago: read_sozokunin(in_daishu_mago),
+        chokkei_sonzoku: read_sozokunin(in_sonzoku),
+        kyodai: read_sozokunin(in_kyodai),
+      },
+    };
+
+    show_result(result_area, () => {
+      const r = calc_sozokuzei(input, tables);
+      return r.ok ? render_sozokuzei_result(r, tables) : message_box(r.riyu);
+    });
+  }
+
+  const all_inputs = [
+    in_bi,
+    in_zaisan,
+    in_hokenkin,
+    in_taishokukin,
+    in_saimu,
+    in_haigusha,
+    in_jisshi,
+    in_yoshi,
+    in_mago_yoshi,
+    in_shibo_ko,
+    in_daishu_mago,
+    in_sonzoku,
+    in_kyodai,
+    in_zoyo_3nen,
+    in_zoyo_choka,
+    in_zoyozei,
+  ];
+  for (const el of all_inputs) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+
+  root.replaceChildren(
+    page_title("相続税", "概算（評価額は入力値です）"),
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/** 相続税の結果・計算過程・根拠を組み立てる */
+function render_sozokuzei_result(r, tables) {
+  const blocks = [];
+
+  blocks.push(
+    result_card("相続税の総額（概算）", format_en(r.sogaku), [
+      { label: "課税価格の合計額", value: format_en(r.kazei_kakaku_gokei) },
+      { label: "基礎控除額", value: format_en(r.kiso_kojo) },
+      { label: "課税遺産総額", value: format_en(r.kazei_isan) },
+      { label: "法定相続人の数", value: `${r.ninzu}人` },
+    ]),
+  );
+
+  blocks.push(warn_line("入力した評価額に基づく概算です。このツールは財産を評価しません。"));
+
+  if (r.yoshi_seigen_tekiyo) {
+    blocks.push(warn_line("養子の数は相続税法15条2項の制限を適用して数えています。"));
+  }
+  if (r.zoyo_kasan > 0) {
+    blocks.push(
+      warn_line(
+        "贈与は『配偶者以外の相続人1人が受けたもの』として計算しています（相続税法19条は人ごとの規定のため）。",
+      ),
+    );
+  }
+
+  blocks.push(
+    result_card(
+      "配偶者が法定相続分を取得した場合の納付総額",
+      format_en(r.pattern1.nofu_sogaku),
+      r.pattern1.meisai.map((m) => ({ label: m.label, value: format_en(m.nofu) })),
+    ),
+  );
+  if (r.pattern2) {
+    blocks.push(
+      result_card(
+        "配偶者が取得しない場合の納付総額",
+        format_en(r.pattern2.nofu_sogaku),
+        r.pattern2.meisai.map((m) => ({ label: m.label, value: format_en(m.nofu) })),
+      ),
+    );
+  }
+
+  const steps = [
+    { label: "法定相続人の数", value: `${r.ninzu}人` },
+    { label: "基礎控除額", value: format_en(r.kiso_kojo) },
+    {
+      label: "課税価格の合計額",
+      value: format_en(r.kazei_kakaku_gokei),
+      note: "千円未満切捨て（国税通則法118条1項）",
+    },
+    { label: "課税遺産総額", value: format_en(r.kazei_isan) },
+  ];
+  for (const m of r.kazei_isan_meisai) {
+    steps.push({
+      label: `${m.label}の法定相続分に応ずる取得金額`,
+      value: format_en(m.shutoku),
+      note: `税額 ${format_en(Math.floor(m.zei))}`,
+    });
+  }
+  steps.push({
+    label: "相続税の総額",
+    value: format_en(r.sogaku),
+    note:
+      "各相続人等の納付すべき税額は、取得した課税価格の割合で按分し、百円未満を切り捨てます（国税通則法119条1項）",
+  });
+
+  blocks.push(breakdown(steps));
+
+  blocks.push(
+    note_block("この計算について", tables.sozokuzei["共通の注記"]),
+    note_block("このツールでは扱わないもの（要相談）", tables.sozokuzei["扱わないもの"]),
+    note_block("根拠", [
+      `適用：${r.tekiyo_hyoji}`,
+      "相続税法12条・13条・15条・16条・17条・18条・19条・19条の2、民法900条・901条、国税通則法118条1項・119条1項",
+      ...tables.sozokuzei["出典"].map((s) => s["名称"]),
+      `数値の最終確認日：${format_hizuke(tables.sozokuzei["最終確認日"])}`,
+    ]),
+  );
+
+  return blocks;
+}
+
 // ---------------------------------------------------------------- リンク集画面
 
 async function render_link_shu() {
@@ -2445,6 +2733,7 @@ const ROUTES = {
   "/entaizei": render_entaizei,
   "/gengo": render_gengo,
   "/furusato": render_furusato,
+  "/sozokuzei": render_sozokuzei,
   "/link-shu": render_link_shu,
   "/hojinzei-hayami": render_hojinzei_hayami,
   "/koushin": render_koushin,
