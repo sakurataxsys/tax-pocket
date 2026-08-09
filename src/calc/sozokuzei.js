@@ -47,11 +47,16 @@ function floor_hyaku(gaku) {
  *   放棄は入力として受け取らない。
  */
 export function count_sozokunin(kosei, setting) {
-  const jisshi = kosei.jisshi ?? 0;
-  const yoshi = kosei.yoshi ?? 0;
-  const mago_yoshi = Math.min(kosei.mago_yoshi ?? 0, yoshi);
-  const shibo_ko = kosei.shibo_ko ?? 0;
-  const daishu = shibo_ko > 0 ? (kosei.daishu_mago ?? 0) : 0;
+  // ★人数はここで丸める。この値はそのままループ回数になるので、
+  //   画面側のガードだけに頼らない（画面を1つ足しただけで固まる経路ができるため）。
+  const n = (v) => Math.min(Math.max(Math.floor(Number(v) || 0), 0), SOZOKUNIN_MAX);
+  const jisshi = n(kosei.jisshi);
+  const yoshi = n(kosei.yoshi);
+  const mago_yoshi = Math.min(n(kosei.mago_yoshi), yoshi);
+  const shibo_ko = n(kosei.shibo_ko);
+  const daishu = shibo_ko > 0 ? n(kosei.daishu_mago) : 0;
+  const sonzoku = n(kosei.chokkei_sonzoku);
+  const kyodai = n(kosei.kyodai);
 
   // 15条3項2号：代襲相続人の孫は実子とみなす
   const jisshi_minashi = jisshi + daishu;
@@ -67,14 +72,14 @@ export function count_sozokunin(kosei, setting) {
 
   let junni = null;
   if (ko_kabu > 0) junni = "ko";
-  else if ((kosei.chokkei_sonzoku ?? 0) > 0) junni = "sonzoku";
-  else if ((kosei.kyodai ?? 0) > 0) junni = "kyodai";
+  else if (sonzoku > 0) junni = "sonzoku";
+  else if (kyodai > 0) junni = "kyodai";
 
   const haigusha = kosei.haigusha === true;
   let ketsuzoku_ninzu = 0;
   if (junni === "ko") ketsuzoku_ninzu = jisshi + futsu_yoshi_yuko + mago_yoshi_yuko + daishu;
-  else if (junni === "sonzoku") ketsuzoku_ninzu = kosei.chokkei_sonzoku;
-  else if (junni === "kyodai") ketsuzoku_ninzu = kosei.kyodai;
+  else if (junni === "sonzoku") ketsuzoku_ninzu = sonzoku;
+  else if (junni === "kyodai") ketsuzoku_ninzu = kyodai;
 
   return {
     ninzu: (haigusha ? 1 : 0) + ketsuzoku_ninzu,
@@ -86,8 +91,8 @@ export function count_sozokunin(kosei, setting) {
       mago_yoshi: mago_yoshi_yuko,
       daishu,
       ko_kabu,
-      chokkei_sonzoku: junni === "sonzoku" ? kosei.chokkei_sonzoku : 0,
-      kyodai: junni === "kyodai" ? kosei.kyodai : 0,
+      chokkei_sonzoku: junni === "sonzoku" ? sonzoku : 0,
+      kyodai: junni === "kyodai" ? kyodai : 0,
     },
     yoshi_seigen_tekiyo: yoshi > yoshi_yuko,
   };

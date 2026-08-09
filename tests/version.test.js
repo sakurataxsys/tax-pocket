@@ -11,7 +11,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import { APP_VERSION, KOUSHIN_ICHIRAN } from "../src/version.js";
 
@@ -55,6 +55,40 @@ describe("更新の確認に並べる数値表の一覧", () => {
   test("同じファイルを二重に並べていない", () => {
     const files = KOUSHIN_ICHIRAN.map((t) => t.file);
     assert.equal(new Set(files).size, files.length);
+  });
+});
+
+describe("オフラインで開くために取り込むファイルの一覧", () => {
+  // ★DATA_FILES と違い、SHELL は今まで何も検査していなかった（セキュリティ診断の低-2）。
+  //   src/ に計算モジュールを1本足して sw.js の SHELL に足し忘れると、
+  //   **そのメニューだけオフラインで開かない**。しかも事務所内＝電波良好では気づけない。
+  const sw_shell = (() => {
+    const block = sw.match(/const SHELL = \[([\s\S]*?)\];/);
+    assert.ok(block, "sw.js の SHELL を読み取れなかった");
+    return [...block[1].matchAll(/"\.\/([^"]+)"/g)].map((m) => m[1]);
+  })();
+
+  test("src/ 配下の .js がすべて SHELL に載っている", () => {
+    const dir = new URL("../src/", import.meta.url);
+    const walk = (d, prefix) =>
+      readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory()
+          ? walk(new URL(`${e.name}/`, d), `${prefix}${e.name}/`)
+          : e.name.endsWith(".js")
+            ? [`${prefix}${e.name}`]
+            : [],
+      );
+    const on_disk = walk(dir, "src/").sort();
+    const in_shell = sw_shell.filter((p) => p.startsWith("src/")).sort();
+    assert.deepEqual(
+      in_shell,
+      on_disk,
+      "計算モジュールを増やしたら sw.js の SHELL にも足すこと（漏れるとその画面だけオフラインで開かない）",
+    );
+  });
+
+  test("SHELL に同じファイルを二重に並べていない", () => {
+    assert.equal(new Set(sw_shell).size, sw_shell.length);
   });
 });
 

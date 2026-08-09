@@ -2419,9 +2419,19 @@ async function render_sozokuzei() {
     kyodai_wrap.hidden = !(ko_kei === 0 && sonzoku === 0);
   }
 
-  /** 相続開始日から、贈与財産欄のラベル・表示・補足を組み替える */
+  /**
+   * 相続開始日から、贈与財産欄のラベル・表示・補足を組み替える。
+   *
+   * ★この関数は data/sozokuzei.json の形に直接触るので、必ず show_result() の中から呼ぶ。
+   *   外で呼ぶと、改正で版の形が変わった端末では例外がリスナ内で握り潰され、
+   *   結果領域が一度も差し替えられない＝**直前の計算結果が残ったまま入力だけが変わる**
+   *   （セキュリティ診断の中-1。過去に同型が2回出ている）。
+   */
   function apply_zoyo_labels() {
     const bi = /^\d{4}-\d{2}-\d{2}$/.test(in_bi.value) ? in_bi.value : today_iso();
+    // 収録範囲の外は版を選べない。ラベルを組み替えず既定のままにする
+    // （組み替えると minus_years が「0年2月1日」のような日付を作る。同 低-3）
+    if (bi < tables.sozokuzei["収録開始日"]) return;
     const version =
       pick_version(tables.sozokuzei["版"], Number(bi.slice(0, 4))) ?? tables.sozokuzei["版"][0];
     const kikan = zoyo_kasan_kikan(bi, version["贈与加算"]);
@@ -2434,18 +2444,12 @@ async function render_sozokuzei() {
   }
 
   function recalc() {
-    apply_ninzu_visibility();
-    apply_zoyo_labels();
+    apply_ninzu_visibility(); // DOM の hidden を切り替えるだけ。data には触らない
 
     const num = (el) => Number(String(el.value).replace(/[^0-9]/g, "") || 0);
     const zaisan = num(in_zaisan);
     const hokenkin = num(in_hokenkin);
     const taishokukin_gaku = num(in_taishokukin);
-
-    if (zaisan <= 0 && hokenkin <= 0 && taishokukin_gaku <= 0) {
-      result_area.replaceChildren(message_box("財産の評価額を入力してください。"));
-      return;
-    }
 
     const input = {
       sozoku_kaishi_bi: in_bi.value,
@@ -2469,6 +2473,10 @@ async function render_sozokuzei() {
     };
 
     show_result(result_area, () => {
+      apply_zoyo_labels();
+      if (zaisan <= 0 && hokenkin <= 0 && taishokukin_gaku <= 0) {
+        return message_box("財産の評価額を入力してください。");
+      }
       const r = calc_sozokuzei(input, tables);
       return r.ok ? render_sozokuzei_result(r, tables) : message_box(r.riyu);
     });

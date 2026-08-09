@@ -333,6 +333,20 @@ describe("⑤ 相続人の構成の分岐", () => {
     assert.match(r.riyu, /代襲/);
   });
 
+  test("人数に極端な値を渡しても計算モジュール側で丸める（画面のガードに頼らない）", () => {
+    // ★この値はそのままループ回数になる。画面を1つ足しただけで固まる経路ができないよう、
+    //   count_sozokunin 自身が上限を持つ（セキュリティ診断の低-1）
+    const t0 = process.hrtime.bigint();
+    const r = calc_sozokuzei(
+      input({ kosei: { haigusha: true, jisshi: 100000000, yoshi: 0 } }),
+      tables,
+    );
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.equal(r.ok, true);
+    assert.equal(r.ninzu, 21); // 配偶者1＋子20（上限）
+    assert.ok(ms < 100, `丸めが効いていない（${Math.round(ms)}ms かかった）`);
+  });
+
   test("法定相続人がいない場合は計算せず理由を返す", () => {
     const r = calc_sozokuzei(input({ kosei: { haigusha: false, jisshi: 0 } }), tables);
     assert.equal(r.ok, false);
