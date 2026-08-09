@@ -43,6 +43,22 @@ export function field(label_text, control, note) {
   );
 }
 
+/**
+ * 入力欄をタップしたら、入っている値を選択状態にする。
+ * 次に打った1文字で丸ごと置き換わるので、前の値を手で消さなくてよい。
+ *
+ * ★focus の中で直に select() しても、そのあとブラウザが指の位置に
+ *   キャレットを置き直して選択が外れる端末がある。0ms 遅らせて後から掛ける。
+ */
+function select_on_focus(input) {
+  input.addEventListener("focus", () => {
+    setTimeout(() => {
+      // 遅らせている間に別の欄へ移っていたら何もしない
+      if (document.activeElement === input) input.select();
+    }, 0);
+  });
+}
+
 /** 金額の入力欄。3桁区切りを入れながら、カーソル位置を保つ */
 export function money_input(opts = {}) {
   const input = h("input", {
@@ -64,12 +80,13 @@ export function money_input(opts = {}) {
     }
     input.setSelectionRange(pos, pos);
   });
+  select_on_focus(input);
   return input;
 }
 
 /** 数値（年数など）の入力欄 */
 export function number_input(opts = {}) {
-  return h("input", {
+  const input = h("input", {
     type: "number",
     inputmode: "numeric",
     min: opts.min ?? 0,
@@ -79,6 +96,8 @@ export function number_input(opts = {}) {
     class: "input input--number",
     placeholder: opts.placeholder ?? "0",
   });
+  select_on_focus(input);
+  return input;
 }
 
 /** 日付の入力欄。値は "YYYY-MM-DD"（比較は文字列のまま行う） */
@@ -118,6 +137,33 @@ export function select_group_input() {
     );
   };
   return sel;
+}
+
+/**
+ * 選ぶ肢が2〜3個で、全部を出しておいたほうが速い場面の選択欄。
+ * `.value` と change/input イベントは select_input と同じ形にしてあるので、
+ * 画面側は差し替えるだけでよい（イベントは内側のラジオから浮いてくる）。
+ */
+export function radio_input(options, selected) {
+  const name = `r${Math.random().toString(36).slice(2, 8)}`;
+  const boxes = options.map((o) =>
+    h("input", {
+      type: "radio",
+      name,
+      value: o.value,
+      class: "radio__box",
+      checked: String(o.value) === String(selected),
+    }),
+  );
+  const wrap = h("div", { class: "radio-group" },
+    options.map((o, i) =>
+      h("label", { class: "radio" }, boxes[i], h("span", { class: "radio__label" }, o.label)),
+    ),
+  );
+  Object.defineProperty(wrap, "value", {
+    get: () => boxes.find((b) => b.checked)?.value ?? "",
+  });
+  return wrap;
 }
 
 /** チェック欄（タップ範囲を広く取る） */

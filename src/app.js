@@ -54,6 +54,7 @@ import {
   number_input,
   select_input,
   select_group_input,
+  radio_input,
   date_input,
   check_input,
   result_card,
@@ -1545,7 +1546,7 @@ async function render_gengo() {
   const kyou = gengo_from_seireki(this_year, list, this_year);
   const kyou_kouho = kyou.ok ? kyou.kouho[kyou.kouho.length - 1] : null;
 
-  const in_muki = select_input(
+  const in_muki = radio_input(
     [
       { value: "wareki", label: "和暦から変換" },
       { value: "seireki", label: "西暦から変換" },

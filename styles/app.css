@@ -23,6 +23,13 @@
 
 * { box-sizing: border-box; }
 
+/* ★hidden 属性は必ず効かせる。
+   ブラウザ既定の [hidden]{display:none} は「作者が書いた display 指定」より
+   常に弱いため、.field-row{display:grid} のような1行を足しただけで、
+   hidden を立てた欄が消えなくなる（和暦・西暦の画面で実際に起きた）。
+   欄を隠す側が「素の div で包む」ことを覚えている必要をなくす。 */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -64,7 +71,6 @@ body {
   text-decoration: none;
 }
 .appbar__back::before { content: "← "; }
-.appbar__back[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- 全体 */
 
@@ -186,6 +192,27 @@ main {
 .input--number::-webkit-outer-spin-button,
 .input--number::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .input--number { -moz-appearance: textfield; }
+
+/* 肢を全部出しておく選択欄。指で1回押せば切り替わる（プルダウンは2手かかる） */
+.radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 3rem;
+  cursor: pointer;
+}
+
+.radio__box {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.radio__label { font-size: 0.9375rem; line-height: 1.5; }
 
 .check {
   display: flex;
