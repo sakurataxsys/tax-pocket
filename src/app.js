@@ -1674,18 +1674,11 @@ function render_gengo_result(input, data, this_year) {
 
   const seireki = input.muki === "wareki" ? r.seireki : input.seireki;
   const nenrei = seireki <= this_year ? calc_nenrei_gaisan(seireki, this_year) : null;
-  // ★誕生日が来ているかで1歳ぶれる。読む人はふつうそれを知っているので、
-  //   幅（満N−1〜N歳）ではなく「誕生日が来ている場合」を主に出し、
-  //   来ていない場合を括弧で添える。知らない人にも幅の情報は残る（判断ログ D-32）
-  const nenrei_hyoji =
-    nenrei?.ok && nenrei.saitei === nenrei.saiko
-      ? `満${nenrei.saiko}歳`
-      : nenrei?.ok
-        ? `満${nenrei.saiko}歳（誕生日前は満${nenrei.saitei}歳）`
-        : null;
-  const nenrei_sub = nenrei_hyoji
-    ? [{ label: "生まれ年とみなした年齢", value: nenrei_hyoji }]
-    : [];
+  // ★年齢は1つだけ出す（判断ログ D-32）。
+  //   誕生日が来ているかで1歳ぶれるが、ラベルを「今年の誕生日で」にすれば
+  //   誕生日前は1歳若いことが言外に伝わる。幅や括弧で足すと情報が多すぎる。
+  const nenrei_hyoji = nenrei?.ok ? `満${nenrei.saiko}歳` : null;
+  const nenrei_sub = nenrei_hyoji ? [{ label: "今年の誕生日で", value: nenrei_hyoji }] : [];
 
   if (input.muki === "wareki") {
     blocks.push(
@@ -1725,9 +1718,8 @@ function render_gengo_result(input, data, this_year) {
       "干支",
     ]),
     note_block("年齢の概算について", [
-      "入力した年を「生まれ年」とみなした場合の、今年時点での満年齢です。" +
-        "誕生日を迎えているかどうかで1歳ぶれるため、" +
-        "誕生日が来ている場合の年齢を出し、まだ来ていない場合を括弧で添えています。",
+      "入力した年を「生まれ年」とみなした場合の、今年の誕生日を迎えたあとの満年齢です。" +
+        "誕生日がまだのときは、これより1歳若くなります。",
     ]),
     note_block("根拠", [
       ...data["出典"].map((s) => s["名称"]),
