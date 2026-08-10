@@ -70,14 +70,15 @@ import {
 const root = document.getElementById("app");
 const back_link = document.getElementById("back");
 
+// メニューの並び。上から「関与先でよく開くもの」の順にする。
+//
+// ★並びの根拠は docs/仕様.md の判定表に書いた頻度（『この契約書いくら貼る？』が頻度が高い、
+//   『これ買ったらいくら落ちる？』が頻出、役員退職金の相談が頻出、納付遅延は必ず聞かれる）。
+//   登録免許税は「印紙税と同じ器で作れる」ことが採用理由で、開く場面は登記のときに限られる。
+// ★後ろ3つは性質で固定する ——「参照2画面」→「更新の確認」。
+//   更新の確認は、どこにあるかを配布手順書に書いてあるので**必ず最後**に置く。
+// ★順番を変えるのは事務所（この配列）で、端末ごとの並べ替えは持たない（判断ログ D-33）。
 const MENU = [
-  { path: "#/taishokukin", name: "退職金", desc: "退職所得の税額と手取り", ready: true },
-  {
-    path: "#/genka-shokyaku",
-    name: "減価償却費",
-    desc: "定額法・定率法",
-    ready: true,
-  },
   {
     path: "#/inshizei",
     name: "印紙税",
@@ -85,11 +86,12 @@ const MENU = [
     ready: true,
   },
   {
-    path: "#/toroku-menkyozei",
-    name: "登録免許税",
-    desc: "登記の種類・課税標準から",
+    path: "#/genka-shokyaku",
+    name: "減価償却費",
+    desc: "定額法・定率法",
     ready: true,
   },
+  { path: "#/taishokukin", name: "退職金", desc: "退職所得の税額と手取り", ready: true },
   {
     path: "#/entaizei",
     name: "延滞税・利子税",
@@ -103,15 +105,21 @@ const MENU = [
     ready: true,
   },
   {
+    path: "#/sozokuzei",
+    name: "相続税",
+    desc: "概算（評価額は入力値です）",
+    ready: true,
+  },
+  {
     path: "#/furusato",
     name: "ふるさと納税",
     desc: "限度額の目安（計算方式を選べます）",
     ready: true,
   },
   {
-    path: "#/sozokuzei",
-    name: "相続税",
-    desc: "概算（評価額は入力値です）",
+    path: "#/toroku-menkyozei",
+    name: "登録免許税",
+    desc: "登記の種類・課税標準から",
     ready: true,
   },
   {
@@ -1637,14 +1645,17 @@ function render_gengo_result(input, data, this_year) {
 
   const seireki = input.muki === "wareki" ? r.seireki : input.seireki;
   const nenrei = seireki <= this_year ? calc_nenrei_gaisan(seireki, this_year) : null;
+  // ★誕生日が来ているかで1歳ぶれる。読む人はふつうそれを知っているので、
+  //   幅（満N−1〜N歳）ではなく「誕生日が来ている場合」を主に出し、
+  //   来ていない場合を括弧で添える。知らない人にも幅の情報は残る（判断ログ D-32）
   const nenrei_hyoji =
     nenrei?.ok && nenrei.saitei === nenrei.saiko
-      ? `${nenrei.saiko}歳（概算）`
+      ? `満${nenrei.saiko}歳`
       : nenrei?.ok
-        ? `満${nenrei.saitei}〜${nenrei.saiko}歳`
+        ? `満${nenrei.saiko}歳（誕生日前は満${nenrei.saitei}歳）`
         : null;
   const nenrei_sub = nenrei_hyoji
-    ? [{ label: "生まれ年だとすると（概算）", value: nenrei_hyoji }]
+    ? [{ label: "生まれ年とみなした年齢", value: nenrei_hyoji }]
     : [];
 
   if (input.muki === "wareki") {
@@ -1685,8 +1696,9 @@ function render_gengo_result(input, data, this_year) {
       "干支",
     ]),
     note_block("年齢の概算について", [
-      "入力した年を「生まれ年」とみなした場合の、今年時点での満年齢の幅です。" +
-        "誕生日を迎えているかどうかで1歳ぶれるため、単一の値ではなく幅で表示しています。",
+      "入力した年を「生まれ年」とみなした場合の、今年時点での満年齢です。" +
+        "誕生日を迎えているかどうかで1歳ぶれるため、" +
+        "誕生日が来ている場合の年齢を出し、まだ来ていない場合を括弧で添えています。",
     ]),
     note_block("根拠", [
       ...data["出典"].map((s) => s["名称"]),
