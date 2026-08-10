@@ -4,32 +4,145 @@
 <meta charset="utf-8">
 <title>アイコンの原稿</title>
 <!--
-  icons/*.png の原稿。画像ライブラリを増やさないため、この画面を
-  ビューポートちょうどのサイズでスクリーンショットして PNG を作る。
+  icons/*.png の原稿。**画像ライブラリは増やさない**。canvas に描いて PNG を書き出す。
 
     node tools/serve.mjs
-    → http://localhost:8080/tools/icon-source.html を 512x512 / 192x192 / 180x180 で撮る
+    → http://localhost:8080/tools/icon-source.html を開き、各サイズの「保存」を押す
+    → icons/ に置き換える
 
-  事務所ブランド配色（紺・金・桜）は使わない（設計原則5）。
-  文字はホーム画面アイコンの丸い切り抜き（maskable のセーフゾーン＝中央80%）に収まる大きさにしている。
+  ★2026-08-10、事務所ブランド配色（紺・金・桜）と桜モチーフを使う判断に変えた（判断ログ D-34）。
+    それ以前は「設計原則5のためブランド配色を使わない」として、濃いグレーに白の「税」だけだった。
+    画面側（styles/app.css）は従来どおり差し色は青1色で、ブランド配色は持ち込まない。
+
+  ★maskable のセーフゾーンは中央80%（＝中心から半径0.4）。
+    円形に切り抜かれても欠けないよう、描くものはすべて半径0.4の内側に収める。
 -->
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
   body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #2c2f36;
+    margin: 0;
+    padding: 2rem;
+    background: #f5f5f7;
+    font-family: system-ui, sans-serif;
+    color: #16181d;
   }
-  span {
-    color: #ffffff;
-    font-family: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
-    font-size: 46vmin;
-    font-weight: 600;
-    line-height: 1;
-    user-select: none;
-  }
+  h1 { font-size: 1.125rem; margin: 0 0 1.5rem; }
+  .row { display: flex; gap: 2rem; align-items: flex-end; flex-wrap: wrap; }
+  figure { margin: 0; }
+  figcaption { font-size: 0.75rem; color: #71757e; margin-top: 0.5rem; }
+  canvas { display: block; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 6px 20px rgba(0,0,0,.06); }
+  .maru { border-radius: 50%; }
+  button { margin-top: 0.5rem; font-size: 0.8125rem; padding: 0.375rem 0.75rem; }
 </style>
 </head>
-<body><span>税</span></body>
+<body>
+<h1>税額ポケット — アイコンの原稿</h1>
+<div class="row" id="out"></div>
+
+<script>
+// 事務所ブランド配色
+const KON = "#16273f";   // 紺（地）
+const KIN = "#c8a24a";   // 金（輪）
+const SAKURA = "#f2b8c6"; // 桜（花）
+const SHIRO = "#ffffff";
+
+/** 桜の花びら1枚。中心から上へ伸ばす。先端に浅い切れ込みを入れる */
+function hanabira(ctx, r) {
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(r * 0.52, -r * 0.18, r * 0.60, -r * 0.72, r * 0.16, -r * 0.96);
+  ctx.quadraticCurveTo(0, -r * 0.84, -r * 0.16, -r * 0.96); // 先端の切れ込み
+  ctx.bezierCurveTo(-r * 0.60, -r * 0.72, -r * 0.52, -r * 0.18, 0, 0);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** 桜の花（5弁） */
+function sakura(ctx, cx, cy, r, kaiten) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(kaiten);
+  ctx.fillStyle = SAKURA;
+  for (let i = 0; i < 5; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI * 2) / 5);
+    hanabira(ctx, r);
+    ctx.restore();
+  }
+  // 花芯
+  ctx.fillStyle = KIN;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw(canvas, S) {
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext("2d");
+
+  // 地。maskable なので隅まで塗る
+  ctx.fillStyle = KON;
+  ctx.fillRect(0, 0, S, S);
+
+  const c = S / 2;
+
+  // 金の輪。セーフゾーン（半径0.4）の内側に置く
+  ctx.strokeStyle = KIN;
+  ctx.lineWidth = S * 0.016;
+  ctx.beginPath();
+  ctx.arc(c, c, S * 0.335, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 「税」。明朝で、輪の内側に収める
+  ctx.fillStyle = SHIRO;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `600 ${S * 0.44}px "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", "MS Mincho", serif`;
+  // 明朝は字面が上に寄るので、わずかに下げて光学的な中心を合わせる
+  ctx.fillText("税", c, c + S * 0.015);
+
+  // 桜を輪に重ねる。右上。
+  // ★中心を半径0.31に置く（0.31＋花の半径0.085＝0.395 でセーフゾーン0.4の内側）。
+  //   輪（0.335）はこの花を貫くので、離れて見えることはない。
+  const kaku = -Math.PI * 0.28;
+  sakura(ctx, c + Math.cos(kaku) * S * 0.31, c + Math.sin(kaku) * S * 0.31, S * 0.085, 0.3);
+}
+
+const SIZES = [
+  { size: 512, file: "icon-512.png" },
+  { size: 192, file: "icon-192.png" },
+  { size: 180, file: "apple-touch-icon-180.png" },
+];
+
+const out = document.getElementById("out");
+for (const s of SIZES) {
+  const fig = document.createElement("figure");
+  const cv = document.createElement("canvas");
+  cv.className = "maru";
+  cv.style.width = Math.min(s.size, 256) + "px";
+  cv.style.height = Math.min(s.size, 256) + "px";
+  draw(cv, s.size);
+  const cap = document.createElement("figcaption");
+  cap.textContent = `${s.size}×${s.size} — ${s.file}（丸く切り抜いた見え方）`;
+  const btn = document.createElement("button");
+  btn.textContent = "保存";
+  btn.onclick = () => {
+    const a = document.createElement("a");
+    a.href = cv.toDataURL("image/png");
+    a.download = s.file;
+    a.click();
+  };
+  fig.append(cv, cap, btn);
+  out.append(fig);
+}
+
+// 書き出し用。開発時にコンソール／自動化から呼ぶ
+window.png_dataurl = (size) => {
+  const cv = document.createElement("canvas");
+  draw(cv, size);
+  return cv.toDataURL("image/png");
+};
+</script>
+</body>
 </html>
