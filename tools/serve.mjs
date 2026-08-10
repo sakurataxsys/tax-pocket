@@ -17,7 +17,12 @@ const PORT = Number(process.env.PORT ?? 8080);
 // tools/icon-source.html が描いた PNG を icons/ に書き戻すための口。
 // **開発専用**。GitHub Pages は静的配信なので、この経路は公開先には存在しない。
 // 書ける先は下の3つのファイル名だけに固定する（パスを受け取らない）。
-const ICON_FILES = new Set(["icon-512.png", "icon-192.png", "apple-touch-icon-180.png"]);
+const ICON_FILES = new Map([
+  ["icon-512.png", "icons"],
+  ["icon-192.png", "icons"],
+  ["apple-touch-icon-180.png", "icons"],
+  ["icon-base.png", "tools"], // アイコンの下絵（切り出し済み）
+]);
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -39,10 +44,11 @@ createServer(async (req, res) => {
     for await (const chunk of req) raw += chunk;
     try {
       const { file, dataurl } = JSON.parse(raw);
-      if (!ICON_FILES.has(file)) throw new Error(`書ける先ではありません: ${file}`);
+      const dir = ICON_FILES.get(file);
+      if (!dir) throw new Error(`書ける先ではありません: ${file}`);
       const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataurl ?? "");
       if (!m) throw new Error("PNG の data URL ではありません");
-      await writeFile(join(ROOT, "icons", file), Buffer.from(m[1], "base64"));
+      await writeFile(join(ROOT, dir, file), Buffer.from(m[1], "base64"));
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, file }));
     } catch (e) {

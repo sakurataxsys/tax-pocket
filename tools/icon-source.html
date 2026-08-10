@@ -4,109 +4,98 @@
 <meta charset="utf-8">
 <title>アイコンの原稿</title>
 <!--
-  icons/*.png の原稿。**画像ライブラリは増やさない**。canvas に描いて PNG を書き出す。
+  icons/*.png を作る道具。**画像ライブラリは増やさない**。canvas で合成して書き出す。
 
     node tools/serve.mjs
-    → http://localhost:8080/tools/icon-source.html を開き、各サイズの「保存」を押す
-    → icons/ に置き換える
+    → http://localhost:8080/tools/icon-source.html
+    → 「書き出す」を押すと icons/ の3枚が置き換わる
 
-  ★2026-08-10、事務所ブランド配色（紺・金・桜）と桜モチーフを使う判断に変えた（判断ログ D-34）。
-    それ以前は「設計原則5のためブランド配色を使わない」として、濃いグレーに白の「税」だけだった。
-    画面側（styles/app.css）は従来どおり差し色は青1色で、ブランド配色は持ち込まない。
+  材料は2つ。
+    tools/icon-base.png … 下絵（225×225）。ポケットと電卓。生成AIに描かせた案から1枚を
+                           切り出し、右下にあった桜を左右対称の位置から写して消したもの
+    tools/logo-mark.png … 事務所のロゴ（桜）。事務所名は使わない（判断ログ D-34）
 
-  ★maskable のセーフゾーンは中央80%（＝中心から半径0.4）。
-    円形に切り抜かれても欠けないよう、描くものはすべて半径0.4の内側に収める。
+  ★maskable：OSがアイコンを丸く切り抜く。中身は中心から半径0.4の内側に収める。
+    下絵を 0.78 倍で置いているのはそのため（0.90 だと 0.459 まで届いて切れる）。
+    このページで実測しているので、値を変えたら必ず確認すること。
+
+  ★下絵は角丸の絵なので、そのまま置くと角に白が残る。
+    地を下絵と同じ紺で塗り、角丸のパスで切り抜いてから重ねている。
+    地の紺 rgb(15,37,74) は下絵の縁から採った値。ずらすと輪郭が見える。
+
+  ★Image.decode() は使わない。この環境で解決しないままページが止まることがあった。onload で待つ。
 -->
 <style>
-  body {
-    margin: 0;
-    padding: 2rem;
-    background: #f5f5f7;
-    font-family: system-ui, sans-serif;
-    color: #16181d;
-  }
-  h1 { font-size: 1.125rem; margin: 0 0 1.5rem; }
-  .row { display: flex; gap: 2rem; align-items: flex-end; flex-wrap: wrap; }
-  figure { margin: 0; }
-  figcaption { font-size: 0.75rem; color: #71757e; margin-top: 0.5rem; }
-  canvas { display: block; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 6px 20px rgba(0,0,0,.06); }
-  .maru { border-radius: 50%; }
-  button { margin-top: 0.5rem; font-size: 0.8125rem; padding: 0.375rem 0.75rem; }
+  body { margin:0; padding:2rem; background:#f5f5f7; font-family:system-ui,sans-serif; color:#16181d; }
+  h1 { font-size:1.125rem; margin:0 0 0.5rem; }
+  .lead { font-size:0.8125rem; color:#71757e; margin:0 0 2rem; }
+  .row { display:flex; gap:2rem; align-items:flex-start; flex-wrap:wrap; }
+  figure { margin:0; }
+  figcaption { font-size:0.75rem; color:#71757e; margin-top:0.625rem; }
+  canvas { display:block; box-shadow:0 1px 2px rgba(0,0,0,.1), 0 6px 20px rgba(0,0,0,.08); }
+  .maru { border-radius:50%; }
+  button { margin-top:1.5rem; font-size:0.875rem; padding:0.5rem 1rem; }
+  #check { margin-top:2rem; font-size:0.8125rem; white-space:pre-wrap; }
 </style>
 </head>
 <body>
-<h1>税額ポケット — アイコンの原稿</h1>
+<h1>税額ポケット — アイコン</h1>
+<p class="lead">左が実際のホーム画面に近い大きさ（132px・丸く切り抜いた状態）、右が確認用です。</p>
 <div class="row" id="out"></div>
+<button id="save">icons/ に書き出す（512・192・180）</button>
+<div id="check"></div>
 
 <script>
-// 事務所ブランド配色
-const KON = "#16273f";   // 紺（地）
-const KIN = "#c8a24a";   // 金（輪）
-const SAKURA = "#f2b8c6"; // 桜（花）
-const SHIRO = "#ffffff";
+const JI = "rgb(15,37,74)";   // 地の紺。下絵の縁から採った値
+const SCALE = 0.78;           // 下絵を置く倍率（セーフゾーンに収まる上限）
+const LOGO_W = 0.20;          // ロゴの幅（辺に対する比）
+const LOGO_X = 0.715;         // 下絵の中でのロゴの位置（元の桜があった場所）
+const LOGO_Y = 0.740;
 
-/** 桜の花びら1枚。中心から上へ伸ばす。先端に浅い切れ込みを入れる */
-function hanabira(ctx, r) {
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.bezierCurveTo(r * 0.52, -r * 0.18, r * 0.60, -r * 0.72, r * 0.16, -r * 0.96);
-  ctx.quadraticCurveTo(0, -r * 0.84, -r * 0.16, -r * 0.96); // 先端の切れ込み
-  ctx.bezierCurveTo(-r * 0.60, -r * 0.72, -r * 0.52, -r * 0.18, 0, 0);
-  ctx.closePath();
-  ctx.fill();
+const load = (src) =>
+  new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error(`読めない: ${src}`));
+    i.src = src;
+  });
+
+function egaku(base, logo, S) {
+  const cv = document.createElement("canvas");
+  cv.width = S; cv.height = S;
+  const c = cv.getContext("2d");
+  c.fillStyle = JI;
+  c.fillRect(0, 0, S, S);
+  const k = S * SCALE, off = (S - k) / 2;
+  c.save();
+  c.beginPath();
+  c.roundRect(off, off, k, k, k * 0.24); // 下絵の角丸に合わせて切り抜く
+  c.clip();
+  c.drawImage(base, off, off, k, k);
+  c.restore();
+  const lw = S * LOGO_W, lh = lw * (logo.naturalHeight / logo.naturalWidth);
+  c.drawImage(logo, off + k * LOGO_X - lw / 2, off + k * LOGO_Y - lh / 2, lw, lh);
+  return cv;
 }
 
-/** 桜の花（5弁） */
-function sakura(ctx, cx, cy, r, kaiten) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(kaiten);
-  ctx.fillStyle = SAKURA;
-  for (let i = 0; i < 5; i++) {
-    ctx.save();
-    ctx.rotate((i * Math.PI * 2) / 5);
-    hanabira(ctx, r);
-    ctx.restore();
+/** 中身（生成り・金・桜）が中心からどこまで届くか。0.4以下なら丸く切られても欠けない */
+function jikoTenken(base, logo) {
+  const S = 256;
+  const d = egaku(base, logo, S)
+    .getContext("2d", { willReadFrequently: true })
+    .getImageData(0, 0, S, S).data;
+  let max = 0;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = (y * S + x) * 4, r = d[i], g = d[i + 1], b = d[i + 2];
+    const naka =
+      (r > 190 && g > 180 && b > 160) ||            // 生成り
+      (r > 170 && g > 130 && b < 130) ||            // 金
+      (r > 200 && g > 120 && g < 200 && b > 130 && b < 205 && r - g > 35); // 桜
+    if (!naka) continue;
+    const rr = Math.hypot(x - S / 2, y - S / 2) / S;
+    if (rr > max) max = rr;
   }
-  // 花芯
-  ctx.fillStyle = KIN;
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.17, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function draw(canvas, S) {
-  canvas.width = S;
-  canvas.height = S;
-  const ctx = canvas.getContext("2d");
-
-  // 地。maskable なので隅まで塗る
-  ctx.fillStyle = KON;
-  ctx.fillRect(0, 0, S, S);
-
-  const c = S / 2;
-
-  // 金の輪。セーフゾーン（半径0.4）の内側に置く
-  ctx.strokeStyle = KIN;
-  ctx.lineWidth = S * 0.016;
-  ctx.beginPath();
-  ctx.arc(c, c, S * 0.335, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // 「税」。明朝で、輪の内側に収める
-  ctx.fillStyle = SHIRO;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `600 ${S * 0.44}px "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", "MS Mincho", serif`;
-  // 明朝は字面が上に寄るので、わずかに下げて光学的な中心を合わせる
-  ctx.fillText("税", c, c + S * 0.015);
-
-  // 桜を輪に重ねる。右上。
-  // ★中心を半径0.31に置く（0.31＋花の半径0.085＝0.395 でセーフゾーン0.4の内側）。
-  //   輪（0.335）はこの花を貫くので、離れて見えることはない。
-  const kaku = -Math.PI * 0.28;
-  sakura(ctx, c + Math.cos(kaku) * S * 0.31, c + Math.sin(kaku) * S * 0.31, S * 0.085, 0.3);
+  return max;
 }
 
 const SIZES = [
@@ -115,34 +104,55 @@ const SIZES = [
   { size: 180, file: "apple-touch-icon-180.png" },
 ];
 
-const out = document.getElementById("out");
-for (const s of SIZES) {
-  const fig = document.createElement("figure");
-  const cv = document.createElement("canvas");
-  cv.className = "maru";
-  cv.style.width = Math.min(s.size, 256) + "px";
-  cv.style.height = Math.min(s.size, 256) + "px";
-  draw(cv, s.size);
-  const cap = document.createElement("figcaption");
-  cap.textContent = `${s.size}×${s.size} — ${s.file}（丸く切り抜いた見え方）`;
-  const btn = document.createElement("button");
-  btn.textContent = "保存";
-  btn.onclick = () => {
-    const a = document.createElement("a");
-    a.href = cv.toDataURL("image/png");
-    a.download = s.file;
-    a.click();
-  };
-  fig.append(cv, cap, btn);
-  out.append(fig);
-}
+(async () => {
+  const [base, logo] = await Promise.all([
+    load("/tools/icon-base.png"),
+    load("/tools/logo-mark.png"),
+  ]);
+  const out = document.getElementById("out");
 
-// 書き出し用。開発時にコンソール／自動化から呼ぶ
-window.png_dataurl = (size) => {
-  const cv = document.createElement("canvas");
-  draw(cv, size);
-  return cv.toDataURL("image/png");
-};
+  for (const [size, label, maru] of [
+    [132, "ホーム画面での見え方（丸く切り抜き）", true],
+    [256, "確認用", false],
+  ]) {
+    const fig = document.createElement("figure");
+    const cv = egaku(base, logo, 512);
+    cv.style.width = cv.style.height = size + "px";
+    if (maru) cv.className = "maru";
+    const cap = document.createElement("figcaption");
+    cap.textContent = label;
+    fig.append(cv, cap);
+    out.append(fig);
+  }
+
+  const todoke = jikoTenken(base, logo);
+  document.getElementById("check").textContent =
+    `セーフゾーンの実測：中身の最大半径 ${todoke.toFixed(3)}（0.4以下なら丸く切られても欠けない）` +
+    (todoke > 0.4 ? "\n★超えている。SCALE を小さくすること。" : "");
+
+  const save = async () => {
+    const r = [];
+    for (const s of SIZES) {
+      const res = await fetch("/__save-icon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: s.file,
+          dataurl: egaku(base, logo, s.size).toDataURL("image/png"),
+        }),
+      });
+      r.push({ file: s.file, ok: res.ok });
+    }
+    return r;
+  };
+  document.getElementById("save").onclick = async (e) => {
+    e.target.disabled = true;
+    const r = await save();
+    e.target.textContent = r.every((x) => x.ok) ? "書き出した" : "失敗";
+  };
+  window.kakidashi = save;
+  window.tenken = () => Number(jikoTenken(base, logo).toFixed(3));
+})();
 </script>
 </body>
 </html>
