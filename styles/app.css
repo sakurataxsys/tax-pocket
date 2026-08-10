@@ -106,6 +106,18 @@ main {
 
 /* -------------------------------------------------------------- メニュー */
 
+/* メニューの塊。罫線で囲わず、見出しと余白で区切る（内部ツール4原則） */
+.menu-group + .menu-group { margin-top: 2.25rem; }
+
+.menu-group__title {
+  margin: 0 0 0.75rem;
+  padding-left: 0.125rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 .menu { display: flex; flex-direction: column; gap: 0.875rem; }
 
 .menu__item {

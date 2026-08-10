@@ -70,78 +70,97 @@ import {
 const root = document.getElementById("app");
 const back_link = document.getElementById("back");
 
-// メニューの並び。上から「関与先で開く場面の多い順」に、性質でまとめて並べる。
+// メニューの並び。**塊は税目ではなく「職員の操作」で分ける**（判断ログ D-33）。
 //
-// ★先頭は「和暦・西暦」。税額計算ではないが、書類の日付で場面を選ばずに使うため
-//   あえて一番上に置く（ユーザー判断。判断ログ D-33）。
-// ★次が計算を伴うもの ——「減価償却費・退職金・ふるさと納税・相続税」。
-//   入力から金額を組み立てる画面で、関与先の前で数字を作りにいく用途。
-//   「延滞税・利子税」も計算だが、日数から機械的に出るだけなのでこの塊の最後に置く。
-// ★そのあとが表を引くだけのもの ——「印紙税・登録免許税」は該当する行を探す画面で、
-//   参照2画面（法人税の早見表・リンク集）と性質が同じ。
-// ★更新の確認は、どこにあるかを配布手順書に書いてあるので**必ず最後**に置く。
-// ★順番を変えるのは事務所（この配列）で、端末ごとの並べ替えは持たない（判断ログ D-33）。
-const MENU = [
+// ★便利ツール       … 税額計算ではないが、書類の日付で場面を選ばずに使う
+// ★計算シミュレーター … 入力から金額を組み立てる。関与先の前で数字を作りにいく
+//                      （延滞税・利子税は日数から機械的に出るだけなので、この塊の最後）
+// ★調べもの・早見表  … 該当する行を探すだけ。印紙税・登録免許税は税額計算メニューだが、
+//                      職員の操作は別表の行探しで、早見表やリンク集と変わらない
+// ★アプリの状態      … 更新の確認。どこにあるかを配布手順書に書いてあるので**必ず最後**
+//
+// 順番を変えるのは事務所（この配列）で、端末ごとの並べ替えは持たない（D-33）。
+const MENU_GROUPS = [
   {
-    path: "#/gengo",
-    name: "和暦・西暦",
-    desc: "和暦⇄西暦・年齢の概算",
-    ready: true,
+    midashi: "便利ツール",
+    items: [
+      {
+        path: "#/gengo",
+        name: "和暦・西暦",
+        desc: "和暦⇄西暦・年齢の概算",
+        ready: true,
+      },
+    ],
   },
   {
-    path: "#/genka-shokyaku",
-    name: "減価償却費",
-    desc: "定額法・定率法",
-    ready: true,
-  },
-  { path: "#/taishokukin", name: "退職金", desc: "退職所得の税額と手取り", ready: true },
-  {
-    path: "#/furusato",
-    name: "ふるさと納税",
-    desc: "限度額の目安（計算方式を選べます）",
-    ready: true,
-  },
-  {
-    path: "#/sozokuzei",
-    name: "相続税",
-    desc: "概算（評価額は入力値です）",
-    ready: true,
-  },
-  {
-    path: "#/entaizei",
-    name: "延滞税・利子税",
-    desc: "納付が遅れた日数から",
-    ready: true,
-  },
-  {
-    path: "#/inshizei",
-    name: "印紙税",
-    desc: "契約書等の記載金額から",
-    ready: true,
-  },
-  {
-    path: "#/toroku-menkyozei",
-    name: "登録免許税",
-    desc: "登記の種類・課税標準から",
-    ready: true,
+    midashi: "計算シミュレーター",
+    items: [
+      {
+        path: "#/genka-shokyaku",
+        name: "減価償却費",
+        desc: "定額法・定率法",
+        ready: true,
+      },
+      { path: "#/taishokukin", name: "退職金", desc: "退職所得の税額と手取り", ready: true },
+      {
+        path: "#/furusato",
+        name: "ふるさと納税",
+        desc: "限度額の目安（計算方式を選べます）",
+        ready: true,
+      },
+      {
+        path: "#/sozokuzei",
+        name: "相続税",
+        desc: "概算（評価額は入力値です）",
+        ready: true,
+      },
+      {
+        path: "#/entaizei",
+        name: "延滞税・利子税",
+        desc: "納付が遅れた日数から",
+        ready: true,
+      },
+    ],
   },
   {
-    path: "#/hojinzei-hayami",
-    name: "法人税の早見表",
-    desc: "実効税率・均等割",
-    ready: true,
+    midashi: "調べもの・早見表",
+    items: [
+      {
+        path: "#/inshizei",
+        name: "印紙税",
+        desc: "契約書等の記載金額から",
+        ready: true,
+      },
+      {
+        path: "#/toroku-menkyozei",
+        name: "登録免許税",
+        desc: "登記の種類・課税標準から",
+        ready: true,
+      },
+      {
+        path: "#/hojinzei-hayami",
+        name: "法人税の早見表",
+        desc: "実効税率・均等割",
+        ready: true,
+      },
+      {
+        path: "#/link-shu",
+        name: "リンク集",
+        desc: "税額表・社会保険料率等（適用年度つき）",
+        ready: true,
+      },
+    ],
   },
   {
-    path: "#/link-shu",
-    name: "リンク集",
-    desc: "税額表・社会保険料率等（適用年度つき）",
-    ready: true,
-  },
-  {
-    path: "#/koushin",
-    name: "更新の確認",
-    desc: "この端末に入っている数値表の日付",
-    ready: true,
+    midashi: "アプリの状態",
+    items: [
+      {
+        path: "#/koushin",
+        name: "更新の確認",
+        desc: "この端末に入っている数値表の日付",
+        ready: true,
+      },
+    ],
   },
 ];
 
@@ -176,17 +195,24 @@ function render_menu() {
   back_link.hidden = true;
   root.replaceChildren(
     page_title("税額ポケット", "関与先で使う税額計算ツール"),
-    h("nav", { class: "menu" },
-      MENU.map((m) =>
-        m.ready
-          ? h("a", { class: "menu__item", href: m.path },
-              h("span", { class: "menu__name" }, m.name),
-              h("span", { class: "menu__desc" }, m.desc),
-            )
-          : h("div", { class: "menu__item menu__item--soon" },
-              h("span", { class: "menu__name" }, m.name),
-              h("span", { class: "menu__desc" }, "準備中"),
-            ),
+    // ★replaceChildren は h() と違って配列を平坦化しない。展開して渡すこと
+    //   （配列のまま渡すと "[object HTMLElement]" という文字列になる）
+    ...MENU_GROUPS.map((g) =>
+      h("section", { class: "menu-group" },
+        h("h2", { class: "menu-group__title" }, g.midashi),
+        h("nav", { class: "menu" },
+          g.items.map((m) =>
+            m.ready
+              ? h("a", { class: "menu__item", href: m.path },
+                  h("span", { class: "menu__name" }, m.name),
+                  h("span", { class: "menu__desc" }, m.desc),
+                )
+              : h("div", { class: "menu__item menu__item--soon" },
+                  h("span", { class: "menu__name" }, m.name),
+                  h("span", { class: "menu__desc" }, "準備中"),
+                ),
+          ),
+        ),
       ),
     ),
   );
