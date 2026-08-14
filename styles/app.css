@@ -276,8 +276,13 @@ main {
 .result__subs {
   display: grid;
   /* 見出し（dt）は文字幅ぶんを確保し、余りを値（dd）に渡して折り返させる。
-     1fr auto にすると、値が長いとき見出しが1文字ずつ縦に割れる */
-  grid-template-columns: max-content minmax(0, 1fr);
+     1fr auto にすると、値が長いとき見出しが1文字ずつ縦に割れる。
+     ★ただし max-content のままだと、列幅が最長の見出し（「所得税及び復興特別
+     所得税」＝156px）に引きずられ、スマホ幅では値の列に99pxしか残らない。
+     「一般退職手当等」の「等」1文字が次の行に落ちた。fit-content で見出し列に
+     上限（カードの半分）を与え、上限に達したら折り返すのは見出しの側にする。
+     金額は右揃えで桁を追うものなので、割るなら見出しを割る。 */
+  grid-template-columns: fit-content(50%) minmax(0, 1fr);
   gap: 0.375rem 1rem;
   margin: 1.5rem 0 0;
 }

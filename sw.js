@@ -5,12 +5,14 @@
 //   data/*.json  … network-first（2秒で打ち切り）→ 失敗したら端末のキャッシュ
 //                  税率表を差し替えたその日に反映させるため
 //
-// ★ロジック（src/ 配下）を変更したら CACHE_VERSION を上げること。
+// ★下の SHELL に並んでいるファイルを変更したら CACHE_VERSION を上げること。
+//   src/ のロジックだけでなく styles/app.css・index.html・アイコンも含む（すべて cache-first
+//   なので、版を上げないと既に入れてある端末に永久に届かない）。
 //   data/*.json を差し替えるだけの改正では上げる必要はない（network-first のため）。
 
 // ★src/version.js の APP_VERSION と同じ文字列にする（tests/version.test.js が一致を検査する）。
 //   画面に出す版は APP_VERSION（＝シェルの中身）であって、この定数ではない。理由は src/version.js に書いた。
-const CACHE_VERSION = "v17";
+const CACHE_VERSION = "v18";
 const SHELL_CACHE = `tax-pocket-shell-${CACHE_VERSION}`;
 const DATA_CACHE = "tax-pocket-data"; // 版を付けない。シェルの版を上げてもデータは残す
 
