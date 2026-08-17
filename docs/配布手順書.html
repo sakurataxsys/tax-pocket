@@ -107,16 +107,19 @@
   .reason { margin: 0 0 1.5rem; }
   .reason__head { display: block; font-weight: 600; margin-bottom: .25rem; }
 
-  .menu-list {
-    margin: 1.25rem 0;
-    padding: 0;
-    list-style: none;
+  /* メニューの塊（見出し＋その中身）。罫線で囲わず、余白と文字の強弱だけで分ける */
+  .menu-groups { margin: 1.25rem 0; }
+  .menu-groups dt {
+    margin: 1rem 0 .125rem;
+    font-size: .8125rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .menu-groups dd {
+    margin: 0;
     color: var(--muted);
     font-size: .9375rem;
   }
-  .menu-list li { display: inline; }
-  .menu-list li::after { content: " ／ "; }
-  .menu-list li:last-child::after { content: ""; }
 
   footer {
     margin: 5rem 0 0;
@@ -164,11 +167,17 @@
   <h2><span class="num">1</span>これは何か</h2>
   <p>スマートフォンのブラウザで開き、<strong>ホーム画面に追加して</strong>使います。</p>
   <a class="url" href="https://sakurataxsys.github.io/tax-pocket/">https://sakurataxsys.github.io/tax-pocket/</a>
-  <p class="muted">いま入っているもの</p>
-  <ul class="menu-list">
-    <li>退職金</li><li>減価償却費</li><li>印紙税</li><li>登録免許税</li>
-    <li>延滞税・利子税</li><li>法人税の早見表</li><li>リンク集</li>
-  </ul>
+  <p class="muted">いま入っているもの（メニューはこの順に並んでいます）</p>
+  <dl class="menu-groups">
+    <dt>便利ツール</dt>
+    <dd>和暦・西暦</dd>
+    <dt>計算シミュレーター</dt>
+    <dd>減価償却費 ／ 退職金 ／ ふるさと納税 ／ 相続税 ／ 延滞税・利子税</dd>
+    <dt>調べもの・早見表</dt>
+    <dd>印紙税 ／ 登録免許税 ／ 法人税の早見表 ／ リンク集</dd>
+    <dt>アプリの状態</dt>
+    <dd>更新の確認（6. で使います）</dd>
+  </dl>
 </section>
 
 <section>
@@ -195,7 +204,7 @@
   <div class="keep">
     <span class="keep__label">追加したら、続けてこれをやってください</span>
     <p>ホーム画面のアプリは、ブラウザとは<strong>別々にデータを持ちます</strong>（理由は3.）。<strong>ブラウザで見ておいても、アイコンのアプリ側に入っているとは限りません。</strong></p>
-    <p>追加したら必ず<strong>アイコンから開き直して</strong>、メニューを上から順に1回ずつ表示してください。30秒で終わります。これをやった端末は、電波のない場所でも確実に動きます。</p>
+    <p>追加したら必ず<strong>アイコンから開き直して</strong>、メニューを上から順に1回ずつ表示してください。1分ほどで終わります。これをやった端末は、電波のない場所でも確実に動きます。</p>
   </div>
 </section>
 
@@ -221,7 +230,7 @@
   <h2><span class="num">4</span>使い方</h2>
   <ol>
     <li>アイコンから開く</li>
-    <li>メニューから計算したいものを選ぶ</li>
+    <li>メニューから計算したいものを選ぶ（メニューは4つの塊に分かれています。1. の一覧と同じ順です）</li>
     <li>金額などを入れると、その場で結果が出る（「計算」ボタンを押す必要はありません）</li>
     <li>別の計算をするときは、左上の <strong>「メニュー」</strong> から戻る</li>
   </ol>
@@ -258,7 +267,7 @@
   </div>
 
   <h3>計算のしかたが変わったとき（アプリの版）</h3>
-  <p>税率表の差し替えではなく、計算そのものを直したときは、お知らせに「<strong>アプリの版：v11</strong>」のように書きます。このときは<strong>アプリをいったん閉じて開き直してから</strong>、「更新の確認」の一番上に出ている版を見比べてください。</p>
+  <p>税率表の差し替えではなく、計算そのものを直したときは、お知らせに「<strong>アプリの版：v18</strong>」のように書きます。このときは<strong>アプリをいったん閉じて開き直してから</strong>、「更新の確認」の一番上に出ている版を見比べてください。</p>
   <p>数値表の日付だけが新しくて版が古い場合、<strong>古い計算のしかたで新しい数値を使っている</strong>状態です。</p>
 </section>
 
@@ -267,7 +276,8 @@
   <ul>
     <li><strong>計算結果は概算です。</strong>申告その他の税務判断の根拠には使えません</li>
     <li><strong>入力した金額は端末の外に出ません</strong>（どこのサーバーにも送っていません）。ただし関与先では画面の見え方に配慮してください</li>
-    <li><strong>相続税の概算・ふるさと納税は、まだ入っていません</strong></li>
+    <li><strong>相続税は「財産の評価額を入れると税額の概算が出る」ものです。財産の評価そのものは行いません</strong>（土地の評価額は別に出してから入れてください）</li>
+    <li><strong>ふるさと納税は限度額の目安です。</strong>計算方式は画面のいちばん上で選べます（そのままで構いません）</li>
     <li>リンク集の各リンクには<strong>適用年度</strong>が書いてあります。年度を必ず確かめてから開いてください</li>
   </ul>
 </section>
@@ -283,6 +293,7 @@
 
 <footer>
   <p>本ツールの計算結果は概算であり、申告その他の税務判断の根拠として用いることはできません。実際の税額は個別の事情により異なります。</p>
+  <p>この手順書は 2026年8月17日（令和8年8月17日）時点・アプリの版 v18 の内容です。</p>
 </footer>
 
 </div>
