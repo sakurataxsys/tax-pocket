@@ -2,7 +2,7 @@
 //
 // ★これは検証環境専用。本番は GitHub Pages（https://sakurataxsys.github.io/tax-pocket/）のままで、
 //   こちらは止めない。宿題2件（税率表の即日反映／Service Worker 更新の到達）を測り終えたら
-//   Worker ごと消し、このファイルも消す。経緯は TASKS.md の「Cloudflare へのアップテスト」節。
+//   Worker ごと消し、このファイルと .assetsignore・_headers も消す。経緯は TASKS.md の「Cloudflare へのアップテスト」節。
 //
 // ★職員には配らない。URL は本人以外に渡さない（同じ税額計算ツールが2つ公開で並ぶため）。
 {

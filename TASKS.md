@@ -186,13 +186,21 @@ wrangler は自分の作業フォルダ `.wrangler/` を**配信対象のフォ�
   決めるときは「いま在るファイル」ではなく「これから増えるファイル」で考える。
   ②**公開リポジトリで `git add -A` を使わない。** 明示的にファイル名を並べる
 
-**★宿題1は、このままでは測れない（2026-08-20 実測）**
+**★配信ヘッダを本番に揃えた（2026-08-20）**
 
-配信ヘッダが本番と違う。**Cloudflare Workers は `Cache-Control: public, max-age=0, must-revalidate`
-を返し、GitHub Pages は `max-age=600` を返す**（`data/*.json`・`sw.js` とも実測）。
-宿題1はもともと「`cache: "reload"` で GitHub Pages の `max-age=600` を迂回できているか」という問いなので、
-**600秒の壁が存在しない環境で通っても、本番で通る証明にならない**。
-→ 判断が要る（`_headers` で本番と同じヘッダを再現するか、宿題1は本番の改正対応まで待つか）。
+**放っておくと宿題1は測れなかった。** Cloudflare の既定は `Cache-Control: public, max-age=0, must-revalidate`
+で、GitHub Pages は**全パス一律 `max-age=600`**（どちらも実測）。宿題1はもともと
+「`cache: "reload"` で `max-age=600` を迂回できているか」という問いなので、
+**600秒の壁が無い環境で通っても、本番で通る証明にならない**。
+
+→ **`_headers` を1枚置いて本番と同じ壁を立てた**（`/*` に `Cache-Control: max-age=600`）。
+`/`・`/sw.js`・`/src/app.js`・`/data/*.json`・`/manifest.webmanifest` の**全パスで一致を確認**。
+`_headers` 自体は配信されない（404 で確認）。**GitHub Pages はこのファイルを解釈しないので本番は無影響**
+（Jekyll が「_」で始まる名前を出力しないため）。仕様の出典（一次）＝
+https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/
+
+★**この落とし穴は覚えておく価値がある。** 検証環境は「同じものが動く」だけでは足りない。
+**測ろうとしている当のものが、環境の既定で消えていることがある。**
 
 **このテストで測る宿題2件**（下の「積み残した確認」に「本番でしか測れない」と書いてあったもの）
 
