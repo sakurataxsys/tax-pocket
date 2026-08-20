@@ -169,6 +169,23 @@
   `pages`・`d1`・`email_sending` 等を含む）。取り消しは Cloudflare の My Profile →
   Access Management → Connected Applications、および `wrangler logout`
 
+**★事故と対処（2026-08-20・同日中に解消）**
+
+wrangler は自分の作業フォルダ `.wrangler/` を**配信対象のフォルダの中に作る**。
+その中の `wrangler-account.json` には**アカウントIDとアカウント名（メールアドレス由来）**が入る。
+
+- **配信されていた**（テストURLで HTTP 200）。原因＝`.assetsignore` に `.wrangler` を書いていなかった
+- **コミットにも入れてしまった**。原因＝`git add -A`。**このリポジトリは公開される**
+- **対処（すべて同日中）**：`.assetsignore` と `.gitignore` に `.wrangler` を追加／
+  `git rm --cached` で amend（**push 前だったので公開はされていない**）／
+  **Worker を削除して作り直した**（版ごとのプレビューURLに旧版が残っていて、そこからは読めたため）／
+  `wrangler.jsonc` に `"preview_urls": false` を入れた
+- **検証**：旧版のプレビューURL・新版のプレビューURL・本体URLのいずれでも 404。
+  本体の `/`・`/sw.js` は 200 のまま（＝アプリは動いている）
+- ★**教訓は2つ。**①**道具は自分の作業ファイルを作業対象のフォルダに置く**。配信・公開の対象を
+  決めるときは「いま在るファイル」ではなく「これから増えるファイル」で考える。
+  ②**公開リポジトリで `git add -A` を使わない。** 明示的にファイル名を並べる
+
 **★宿題1は、このままでは測れない（2026-08-20 実測）**
 
 配信ヘッダが本番と違う。**Cloudflare Workers は `Cache-Control: public, max-age=0, must-revalidate`
