@@ -1,0 +1,18 @@
+// Cloudflare Workers（Static Assets）へテスト用の複製を載せるための設定。
+//
+// ★これは検証環境専用。本番は GitHub Pages（https://sakurataxsys.github.io/tax-pocket/）のままで、
+//   こちらは止めない。宿題2件（税率表の即日反映／Service Worker 更新の到達）を測り終えたら
+//   Worker ごと消し、このファイルも消す。経緯は TASKS.md の「Cloudflare へのアップテスト」節。
+//
+// ★職員には配らない。URL は本人以外に渡さない（同じ税額計算ツールが2つ公開で並ぶため）。
+{
+  "name": "tax-pocket-test",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    // ビルド工程が無いので、リポジトリ直下をそのまま配る（GitHub Pages と同じ形）。
+    // 除外するファイルは .assetsignore に書く。
+    "directory": "./"
+    // not_found_handling は既定（"none"）のまま。画面の切り替えは location.hash で行っており、
+    // サーバー側のパスは index.html しか使わないため、SPA 用の書き換えは要らない。
+  }
+}

@@ -33,3 +33,6 @@ Desktop.ini
 
 # サブエージェントの作業メモ（手元だけ。公開リポジトリに載せない）
 .claude/agent-memory-local/
+
+# wrangler のローカル作業フォルダ（アカウントIDとアカウント名が入る。公開リポジトリなので絶対に載せない）
+.wrangler/

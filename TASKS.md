@@ -139,7 +139,7 @@
 - あわせて `docs/配布手順書` を v18 の中身に合わせた
 - **実機での確認は未実施**（スマホ幅の目視は開発者ツールの 375×812 で行った）
 
-### Cloudflare へのアップテスト（2026-08-20 決定・未着手）
+### Cloudflare へのアップテスト（2026-08-20 決定・**接続済み**）
 
 **正本＝ `../keiei-notes/memory/内製ツール配布基盤-Cloudflare適用可否と税額ポケット判定.md`。**
 着手前にそちらを読むこと（ここに書くのは tax-pocket 側で効く要点だけ）。
@@ -157,6 +157,25 @@
   別URLに置いてもそのまま動く。**職員の端末は何も変わらない**（引っ越しではなく並走だから）
 - **Cloudflare Access（URLに認証をかける機能）は今回かけない。** 本人のメールアドレスが Cloudflare 側に
   載るため、先に管轄の審査が要る。テストを短く終わらせる前提なら前倒しする理由がない
+
+**2026-08-20 にここまで済んだ**
+
+- `wrangler.jsonc` と `.assetsignore` を置き、`npx wrangler deploy` で Worker `tax-pocket-test` を作成。
+  **75ファイルが上がり、本番と同じ画面が出た**（メニュー・「更新の確認」で v18 と数値表18件の日付を確認）
+- ★**Workers は `.git` や `node_modules` を自動で除外しない**（Pages は除外していた。公式ドキュメントで確認）。
+  `.assetsignore` を置かないと `.git` の中身まで配信対象になる（実測：除外前の読み取り996ファイル → 除外後75ファイル）
+- **テスト用URLはこのファイルに書かない。** このリポジトリは公開されるため、書けば「本人以外に渡さない」が崩れる
+- 認証は wrangler の OAuth。**要求される権限は28件と広く、この画面では絞れない**（Workers 以外に
+  `pages`・`d1`・`email_sending` 等を含む）。取り消しは Cloudflare の My Profile →
+  Access Management → Connected Applications、および `wrangler logout`
+
+**★宿題1は、このままでは測れない（2026-08-20 実測）**
+
+配信ヘッダが本番と違う。**Cloudflare Workers は `Cache-Control: public, max-age=0, must-revalidate`
+を返し、GitHub Pages は `max-age=600` を返す**（`data/*.json`・`sw.js` とも実測）。
+宿題1はもともと「`cache: "reload"` で GitHub Pages の `max-age=600` を迂回できているか」という問いなので、
+**600秒の壁が存在しない環境で通っても、本番で通る証明にならない**。
+→ 判断が要る（`_headers` で本番と同じヘッダを再現するか、宿題1は本番の改正対応まで待つか）。
 
 **このテストで測る宿題2件**（下の「積み残した確認」に「本番でしか測れない」と書いてあったもの）
 
