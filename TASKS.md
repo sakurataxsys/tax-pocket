@@ -222,6 +222,8 @@ https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate
 2. **Service Worker 更新の到達＝届く。ただし開き直しは2回要る。**
    v18 の端末に v19 を配信し、**1回目の開き直しでは v18 のまま、2回目で v19**。
    → **`docs/配布手順書` の「閉じて開き直す」を全て「1回で変わらなければもう一度」に直した**
+   （`.md` と `.html` の両方）。**PDF の起こし直しは配布時まで保留**（2026-08-20 本人判断）。
+   配るときに `node tools/build_tejunsho_pdf.mjs` を回すこと
 
 判定はアプリ内の「更新の確認」で行った（測り方を新設していない。判断ログ D-25）。
 
@@ -230,13 +232,17 @@ https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate
 - Worker `tax-pocket-test` を削除／`wrangler.jsonc`・`.assetsignore`・`_headers` をリポジトリから削除／
   `index.html`・`manifest.webmanifest` の表示名を `git checkout --` で戻した
 - **`.gitignore` の `.wrangler/` の行だけは残してある**（同じ事故を防ぐため）
-- **★iPhone のホーム画面の「税額ポケット（テスト）」はご本人が削除すること。**
-  Worker を消したので開いても表示されないが、アイコンは残る
+- **iPhone のホーム画面の「税額ポケット（テスト）」は削除済み**（2026-08-20 本人）
 - **Cloudflare の連携は解除済み**（2026-08-20・`wrangler logout`）。鍵のファイルが消えたことと
   `wrangler whoami` が未認証を返すことを実物で確認した。**再開するには `npx wrangler login` から。**
   そのときは `--use-keyring` を付けると、鍵が平文ファイルでなく Windows の資格情報マネージャーに入る
 - **建て直したくなったら判断ログ D-36 を読む。** 3ファイル（`wrangler.jsonc`・`.assetsignore`・`_headers`）の
   中身と、`_headers` が要る理由（本番の `max-age=600` を再現しないと宿題1が測れない）を書いてある
+
+**★経営ノート側に新テーマが立った（2026-08-20 本人指示）**＝「Cloudflare を今後どう使うか検証する」。
+材料は `../keiei-notes/memory/内製ツール配布基盤-Cloudflare適用可否と税額ポケット判定.md` の
+「★次の検証テーマ」節に集約済み。**tax-pocket 側でやることは今のところ無い**（引っ越しの是非が
+その検証で決まったら、ここに戻ってくる）。
 
 **未決のまま残っていること**（いずれも今日は決めていない）
 
