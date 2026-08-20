@@ -202,6 +202,17 @@ https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate
 ★**この落とし穴は覚えておく価値がある。** 検証環境は「同じものが動く」だけでは足りない。
 **測ろうとしている当のものが、環境の既定で消えていることがある。**
 
+**★テスト中は `index.html` と `manifest.webmanifest` を手元で書き換えている（コミットしない）**
+
+ホーム画面で本物と見分けが付かないと取り違えるため、**テスト側だけ表示名を「税額ポケット（テスト）」**にした。
+書き換えているのは4か所＝`<title>`／`apple-mobile-web-app-title`（**iPhone のホーム画面の名前はこれ**）／
+`.appbar__title`／`manifest` の `name`・`short_name`。
+
+- **この2ファイルの変更はコミットしない。** Cloudflare へのデプロイは作業ツリーから直接上げるので、
+  コミットしなくてもテスト側には反映される
+- **テストが終わったら `git checkout -- index.html manifest.webmanifest` で戻す**
+- `git status --short` にこの2つ以外が出たら、それは意図しない変更
+
 **このテストで測る宿題2件**（下の「積み残した確認」に「本番でしか測れない」と書いてあったもの）
 
 1. **税率表の即日反映**：複製を本人の端末に入れ、`data/*.json` を差し替えて当日開く（`data` は network-first）
