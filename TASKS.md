@@ -140,7 +140,7 @@
 - あわせて `docs/配布手順書` を v18 の中身に合わせた
 - **実機での確認は未実施**（スマホ幅の目視は開発者ツールの 375×812 で行った）
 
-### Cloudflare へのアップテスト（2026-08-20・**宿題2件とも測定完了**）
+### Cloudflare へのアップテスト（2026-08-20・**測定完了・撤収済み**）
 
 **正本＝ `../keiei-notes/memory/内製ツール配布基盤-Cloudflare適用可否と税額ポケット判定.md`。**
 着手前にそちらを読むこと（ここに書くのは tax-pocket 側で効く要点だけ）。
@@ -225,11 +225,17 @@ https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate
 
 判定はアプリ内の「更新の確認」で行った（測り方を新設していない。判断ログ D-25）。
 
-**テストが終わったら消すもの**＝Worker `tax-pocket-test`／`wrangler.jsonc`／`.assetsignore`／`_headers`／
-手元の `index.html`・`manifest.webmanifest` の書き換え（`git checkout --` で戻す）／
-iPhone のホーム画面の「税額ポケット（テスト）」
+**撤収した（2026-08-20・同日中）**
 
-**未決のまま残っていること**
+- Worker `tax-pocket-test` を削除／`wrangler.jsonc`・`.assetsignore`・`_headers` をリポジトリから削除／
+  `index.html`・`manifest.webmanifest` の表示名を `git checkout --` で戻した
+- **`.gitignore` の `.wrangler/` の行だけは残してある**（同じ事故を防ぐため）
+- **★iPhone のホーム画面の「税額ポケット（テスト）」はご本人が削除すること。**
+  Worker を消したので開いても表示されないが、アイコンは残る
+- **建て直したくなったら判断ログ D-36 を読む。** 3ファイル（`wrangler.jsonc`・`.assetsignore`・`_headers`）の
+  中身と、`_headers` が要る理由（本番の `max-age=600` を再現しないと宿題1が測れない）を書いてある
+
+**未決のまま残っていること**（いずれも今日は決めていない）
 
 - `main` へ push した瞬間に本番が変わる現状をどう変えるか（デプロイ経路の設計）
 - 独自ドメインを噛ませるか。噛ませるなら**引っ越しを考えるより前**。2026-08-20 時点では決めない
