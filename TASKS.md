@@ -232,6 +232,9 @@ https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate
 - **`.gitignore` の `.wrangler/` の行だけは残してある**（同じ事故を防ぐため）
 - **★iPhone のホーム画面の「税額ポケット（テスト）」はご本人が削除すること。**
   Worker を消したので開いても表示されないが、アイコンは残る
+- **Cloudflare の連携は解除済み**（2026-08-20・`wrangler logout`）。鍵のファイルが消えたことと
+  `wrangler whoami` が未認証を返すことを実物で確認した。**再開するには `npx wrangler login` から。**
+  そのときは `--use-keyring` を付けると、鍵が平文ファイルでなく Windows の資格情報マネージャーに入る
 - **建て直したくなったら判断ログ D-36 を読む。** 3ファイル（`wrangler.jsonc`・`.assetsignore`・`_headers`）の
   中身と、`_headers` が要る理由（本番の `max-age=600` を再現しないと宿題1が測れない）を書いてある
 
