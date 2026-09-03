@@ -65,6 +65,7 @@ import {
   warn_line,
   note_block,
   message_box,
+  guide_box,
 } from "./ui.js";
 
 const root = document.getElementById("app");
@@ -259,6 +260,7 @@ async function render_taishokukin() {
   in_teishutsu.input.checked = true;
 
   const result_area = h("div", { class: "result-area" });
+  const guide = guide_box("退職金の額と勤続年数を入力すると、税額と手取りが下に出ます。");
 
   const form = h("section", { class: "form" },
     field("適用年分", in_nen),
@@ -287,10 +289,10 @@ async function render_taishokukin() {
       nen: Number(in_nen.value),
     };
 
-    if (input.shunyu <= 0 || input.kinzoku_years + input.kinzoku_months <= 0) {
-      result_area.replaceChildren(
-        message_box("退職金の額と勤続年数を入力してください。"),
-      );
+    const minyuryoku = input.shunyu <= 0 || input.kinzoku_years + input.kinzoku_months <= 0;
+    guide.hidden = !minyuryoku;
+    if (minyuryoku) {
+      result_area.replaceChildren();
       return;
     }
 
@@ -311,6 +313,7 @@ async function render_taishokukin() {
 
   root.replaceChildren(
     page_title("退職金", "退職所得の税額と手取り"),
+    guide,
     form,
     result_area,
   );
@@ -477,6 +480,7 @@ async function render_genka_shokyaku() {
     ),
   );
   const result_area = h("div", { class: "result-area" });
+  const guide = guide_box("取得価額と耐用年数を入力すると、償却費が下に出ます。");
 
   const form = h("section", { class: "form" },
     field("取得価額（円）", in_kagaku, "付随費用を含めた金額。消費税は経理方式に合わせる"),
@@ -515,10 +519,10 @@ async function render_genka_shokyaku() {
       keika_months: Number(in_keika_tsuki.value || 0),
     };
 
-    if (input.shutoku_kagaku <= 0 || input.taiyo_nensu <= 0) {
-      result_area.replaceChildren(
-        message_box("取得価額と耐用年数を入力してください。"),
-      );
+    const minyuryoku = input.shutoku_kagaku <= 0 || input.taiyo_nensu <= 0;
+    guide.hidden = !minyuryoku;
+    if (minyuryoku) {
+      result_area.replaceChildren();
       return;
     }
 
@@ -545,6 +549,7 @@ async function render_genka_shokyaku() {
 
   root.replaceChildren(
     page_title("減価償却費", "定額法・定率法"),
+    guide,
     form,
     result_area,
   );
@@ -1612,6 +1617,14 @@ async function render_gengo() {
   const seireki_field = field("西暦（年）", in_seireki);
   const seireki_wrap = h("div", { hidden: true }, seireki_field);
   const result_area = h("div", { class: "result-area" });
+  const guide = guide_box("");
+
+  // 未入力のときは見出し直下の案内を出し、結果欄は空にする
+  function show_guide(text) {
+    guide.textContent = text;
+    guide.hidden = false;
+    result_area.replaceChildren();
+  }
 
   const form = h("section", { class: "form" },
     field("変換の方向", in_muki),
@@ -1627,9 +1640,10 @@ async function render_gengo() {
     if (is_seireki) {
       const seireki = Number(in_seireki.value || 0);
       if (seireki <= 0) {
-        result_area.replaceChildren(message_box("西暦年を入力してください。"));
+        show_guide("西暦の年を入力すると、和暦と年齢の目安が下に出ます。");
         return;
       }
+      guide.hidden = true;
       show_result(result_area, () => {
         const r = gengo_from_seireki(seireki, list, this_year);
         return r.ok
@@ -1640,9 +1654,10 @@ async function render_gengo() {
       const mei = in_mei.value;
       const gengo_nen = Number(in_gengo_nen.value || 0);
       if (gengo_nen <= 0) {
-        result_area.replaceChildren(message_box("元号と年を入力してください。"));
+        show_guide("元号と年を入力すると、西暦と年齢の目安が下に出ます。");
         return;
       }
+      guide.hidden = true;
       show_result(result_area, () => {
         const r = seireki_from_gengo(mei, gengo_nen, list, this_year);
         return r.ok
@@ -1659,6 +1674,7 @@ async function render_gengo() {
 
   root.replaceChildren(
     page_title("和暦・西暦", "和暦⇄西暦・年齢の概算（年単位）"),
+    guide,
     form,
     result_area,
   );
@@ -2002,6 +2018,7 @@ async function render_furusato() {
   );
 
   const result_area = h("div", { class: "result-area" });
+  const guide = guide_box("給与収入を入力すると、限度額の目安が下に出ます。");
 
   const form = h(
     "section",
@@ -2028,8 +2045,9 @@ async function render_furusato() {
     haigusha_wrap.hidden = in_haigusha_umu.value !== "ari";
 
     const kyuyo_shunyu = Number(String(in_kyuyo.value).replace(/[^0-9]/g, "") || 0);
+    guide.hidden = kyuyo_shunyu > 0;
     if (kyuyo_shunyu <= 0) {
-      result_area.replaceChildren(message_box("給与収入を入力してください。"));
+      result_area.replaceChildren();
       return;
     }
 
@@ -2163,6 +2181,7 @@ async function render_furusato() {
 
   root.replaceChildren(
     page_title("ふるさと納税", "限度額の目安（計算方式を選べます）"),
+    guide,
     form,
     result_area,
   );
@@ -2411,6 +2430,7 @@ async function render_sozokuzei() {
   );
 
   const result_area = h("div", { class: "result-area" });
+  const guide = guide_box("財産の評価額を入力すると、相続税の概算が下に出ます。");
 
   const form = h(
     "section",
@@ -2505,11 +2525,16 @@ async function render_sozokuzei() {
       },
     };
 
+    const minyuryoku = zaisan <= 0 && hokenkin <= 0 && taishokukin_gaku <= 0;
+    guide.hidden = !minyuryoku;
+    if (minyuryoku) {
+      apply_zoyo_labels();
+      result_area.replaceChildren();
+      return;
+    }
+
     show_result(result_area, () => {
       apply_zoyo_labels();
-      if (zaisan <= 0 && hokenkin <= 0 && taishokukin_gaku <= 0) {
-        return message_box("財産の評価額を入力してください。");
-      }
       const r = calc_sozokuzei(input, tables);
       return r.ok ? render_sozokuzei_result(r, tables) : message_box(r.riyu);
     });
@@ -2540,6 +2565,7 @@ async function render_sozokuzei() {
 
   root.replaceChildren(
     page_title("相続税", "概算（評価額は入力値です）"),
+    guide,
     form,
     result_area,
   );

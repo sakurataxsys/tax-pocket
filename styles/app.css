@@ -104,6 +104,17 @@ main {
   color: var(--muted);
 }
 
+/* 入力の案内。見出しの直下に置き、差し色（青）で目に入るようにする */
+.guide {
+  margin: -1.25rem 0 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius);
+  background: rgba(10, 99, 216, 0.08);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 /* -------------------------------------------------------------- メニュー */
 
 /* メニューの塊。罫線で囲わず、見出しと余白で区切る（内部ツール4原則） */

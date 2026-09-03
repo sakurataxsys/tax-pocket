@@ -255,6 +255,11 @@ export function note_block(title, items) {
   );
 }
 
+/** 未入力のときの案内。見出しの直下に置く（入力欄の下に置くと目に入らない） */
+export function guide_box(text) {
+  return h("p", { class: "guide" }, text);
+}
+
 /** 計算できないときの表示 */
 export function message_box(text) {
   return h("p", { class: "message" }, text);
