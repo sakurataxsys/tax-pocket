@@ -229,3 +229,38 @@ describe("③ 改正前後の分岐", () => {
     assert.match(r.riyu, /収録/);
   });
 });
+
+// ------------------------------------------------ ④ 数値表が壊れているときの守り
+
+describe("④ 数値表が壊れているときの守り", () => {
+  test("復興特別所得税の乗率が文字列でも、税額が10倍にならない", () => {
+    // (100 + "2.1") が文字列連結になると分子が 10021 になる。
+    // 例外にならず、10倍の税額がもっともらしい顔で画面に出る経路
+    const moji = {
+      ...tables,
+      income_tax: {
+        ...tables.income_tax,
+        版: [
+          {
+            ...tables.income_tax["版"][0],
+            復興特別所得税率パーセント: "2.1",
+          },
+        ],
+      },
+    };
+
+    // 申告書の提出あり（所法201条1項・速算表）＝「① 端数処理」と同じ入力・同じ答え
+    const teishutsu = calc_taishokukin(
+      input({ shunyu: 20000000, kinzoku_years: 25 }),
+      moji,
+    );
+    assert.equal(teishutsu.shotokuzei, 431372);
+
+    // 申告書の提出なし（所法201条3項・収入金額×20.42%）＝乗率を別の式で使う経路
+    const mi_teishutsu = calc_taishokukin(
+      input({ shunyu: 10000000, kinzoku_years: 10, is_teishutsu: false }),
+      moji,
+    );
+    assert.equal(mi_teishutsu.shotokuzei, 2042000);
+  });
+});

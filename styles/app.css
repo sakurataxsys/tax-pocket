@@ -206,7 +206,23 @@ main {
 .input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .input--money, .input--number { text-align: right; }
-.input--select { text-align: left; appearance: none; }
+/* ★右端に下向きの印を置く。
+   appearance:none で既定の矢印が消えるため、印が無いと「押して選ぶ欄」だと分からず、
+   入力できない表示欄に見える（金額欄と見た目が同じになるため）。
+   ★画像ファイルも data: URI も使わない。index.html の CSP が default-src 'self' で、
+   data: の画像は読み込めない（緩めない）。2枚の斜めグラデーションで三角形を描く。 */
+.input--select {
+  text-align: left;
+  appearance: none;
+  cursor: pointer;
+  padding-right: 2.75rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 1.25rem center, right 0.9375rem center;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
 
 /* iOS の date 入力は既定で内容幅になるため、他の欄と高さ・幅を揃える */
 .input--date { appearance: none; min-height: 3rem; }

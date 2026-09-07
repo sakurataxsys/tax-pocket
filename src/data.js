@@ -65,6 +65,20 @@ export async function load_inshizei_tables() {
   return { inshizei, inshizei_hyo };
 }
 
+/**
+ * 報酬の源泉徴収の判定・計算に必要なデータをまとめて読む。
+ *
+ * 復興特別所得税の乗率は income_tax_rates.json 側に1つだけ置いている。
+ * 同じ数値を2か所に持つと、復興特別所得税が終わったときに片方だけ直す事故が起きる。
+ */
+export async function load_hoshu_gensen_tables() {
+  const [hoshu_gensen, income_tax_rates] = await Promise.all([
+    load_data("hoshu_gensen"),
+    load_data("income_tax_rates"),
+  ]);
+  return { hoshu_gensen, income_tax_rates };
+}
+
 /** 元号早見表 */
 export async function load_gengo() {
   return load_data("gengo");

@@ -15,6 +15,7 @@ import {
   load_gengo,
   load_furusato_tables,
   load_sozokuzei_tables,
+  load_hoshu_gensen_tables,
 } from "./data.js";
 import { APP_VERSION, KOUSHIN_ICHIRAN } from "./version.js";
 import { calc_taishokukin } from "./calc/taishokukin.js";
@@ -30,6 +31,13 @@ import {
   keigen_for_leaf,
 } from "./calc/toroku_menkyozei.js";
 import { calc_entaizei, needs_kikan_tokurei_chui } from "./calc/entaizei.js";
+import {
+  HANTEI,
+  calc_hoshu_gensen,
+  pick_hoshu_version,
+  pick_kubun,
+  needs_kyuyo_nyuryoku,
+} from "./calc/hoshu_gensen.js";
 import {
   build_zeigaku_hyo,
   build_kintowari_hyo,
@@ -47,6 +55,7 @@ import {
   format_nen,
   format_ritsu,
   format_hizuke,
+  parse_number,
 } from "./format.js";
 import {
   h,
@@ -77,7 +86,9 @@ const back_link = document.getElementById("back");
 // ★計算シミュレーター … 入力から金額を組み立てる。関与先の前で数字を作りにいく
 //                      （延滞税・利子税は日数から機械的に出るだけなので、この塊の最後）
 // ★調べもの・早見表  … 該当する行を探すだけ。印紙税・登録免許税は税額計算メニューだが、
-//                      職員の操作は別表の行探しで、早見表やリンク集と変わらない
+//                      職員の操作は別表の行探しで、早見表やリンク集と変わらない。
+//                      報酬の源泉徴収も、質問に答えて所法204条1項の該当する号を探す操作なので
+//                      ここに置く（税額は号が決まったあとの掛け算にすぎない）
 // ★アプリの状態      … 更新の確認。どこにあるかを配布手順書に書いてあるので**必ず最後**
 //
 // 順番を変えるのは事務所（この配列）で、端末ごとの並べ替えは持たない（D-33）。
@@ -136,6 +147,12 @@ const MENU_GROUPS = [
         path: "#/toroku-menkyozei",
         name: "登録免許税",
         desc: "登記の種類・課税標準から",
+        ready: true,
+      },
+      {
+        path: "#/hoshu-gensen",
+        name: "報酬の源泉徴収",
+        desc: "要否の判定と税額（弁護士・税理士など）",
         ready: true,
       },
       {
@@ -2705,6 +2722,305 @@ async function render_link_shu() {
   );
 }
 
+// ------------------------------------------------------ 報酬の源泉徴収画面
+
+/**
+ * 報酬・料金等の源泉徴収。
+ *
+ * ★この画面の主役は税額ではなく「源泉徴収が必要かどうか」なので、
+ *   結果カードの見出しは常に「源泉徴収が必要です／不要です／この画面では判定できません」の
+ *   3値のどれかにし、税額はその下に置く。
+ *   止まった経路を「不要」と読み違えると、関与先の前で徴収漏れが起きる。
+ */
+async function render_hoshu_gensen() {
+  back_link.hidden = false;
+  root.replaceChildren(message_box("読み込んでいます…"));
+
+  let tables;
+  try {
+    tables = await load_hoshu_gensen_tables();
+  } catch {
+    root.replaceChildren(
+      page_title("報酬の源泉徴収"),
+      message_box(
+        "区分表を読み込めませんでした。通信できる場所で一度開くと、以後は電波がなくても使えます。",
+      ),
+    );
+    return;
+  }
+
+  const data = tables.hoshu_gensen;
+  const hantei_setting = data["判定"];
+
+  const in_bi = date_input(today_iso());
+  const in_saki = radio_input(
+    hantei_setting["支払先"].map((s) => ({ value: s.key, label: s["呼称"] })),
+    "kojin",
+  );
+  const in_sha = radio_input(
+    hantei_setting["支払者"].map((s) => ({ value: s.key, label: s["呼称"] })),
+    "kojin-igai",
+  );
+  const in_kubun = select_group_input();
+  // ★チェック欄にしない。未チェックが「いいえ」と同じ意味になり、
+  //   6号を選んだだけで（質問に答える前に）「源泉徴収は不要です」と出てしまう。
+  //   既定を持たないラジオにして、答えるまで結論を出さない
+  const in_bar = radio_input(
+    [
+      { value: "yes", label: "はい（バー等の経営者が支払う）" },
+      { value: "no", label: "いいえ（それ以外の者が支払う）" },
+    ],
+    null,
+  );
+  const in_kingaku = money_input({ placeholder: "0" });
+  const in_kyuyo = money_input({ placeholder: "0" });
+
+  // 選んだ区分に合わせて出し入れするので、要素の参照を持っておく
+  const kubun_note = h("div", {});
+  const bar_field = h(
+    "div",
+    { hidden: true },
+    field(hantei_setting["バー等の経営者"]["質問"], in_bar),
+  );
+  const kingaku_field_el = field("1回に支払うべき金額（円）", in_kingaku, "―");
+  const kingaku_label = kingaku_field_el.querySelector(".field__label");
+  const kingaku_note = kingaku_field_el.querySelector(".field__note");
+  const kyuyo_field = h(
+    "div",
+    { hidden: true },
+    field(
+      "その月中に支払う給与等の額（円）",
+      in_kyuyo,
+      "同じ人に給与も支払っている場合。支払っていなければ0",
+    ),
+  );
+  const kingaku_block = h("div", { hidden: true }, kingaku_field_el, kyuyo_field);
+  const result_area = h("div", { class: "result-area" });
+  const guide = guide_box("");
+
+  // 号ごとにまとめた選択肢を作る（2号・4号は控除の有無で分かれるため、号だけでは引けない）
+  function kubun_groups(version) {
+    const groups = [];
+    for (const k of version["区分"]) {
+      // 条文名は選択欄の直下の補足に出しているので、見出しは号だけにする
+      // （8つの見出しすべてで「第2号（所法204条1項2号）」と繰り返すと、行が長いだけで何も足さない）
+      const midashi = k["号"] === null ? "そのほか" : `第${k["号"]}号`;
+      let g = groups.find((x) => x.見出し === midashi);
+      if (!g) {
+        g = { 見出し: midashi, options: [] };
+        groups.push(g);
+      }
+      g.options.push({ value: k.key, label: k["呼称"] });
+    }
+    return groups;
+  }
+
+  // 版が変わったら選択肢も入れ替える。版を足したときに旧版の選択肢が残らないようにする
+  let filled_version = pick_hoshu_version(data["版"], in_bi.value) ?? data["版"][0];
+  in_kubun.fill(kubun_groups(filled_version), "2-a");
+
+  function recalc() {
+    show_result(result_area, () => {
+      const version = pick_hoshu_version(data["版"], in_bi.value);
+      if (version && version !== filled_version) {
+        filled_version = version;
+        in_kubun.fill(kubun_groups(version), in_kubun.value);
+      }
+      const kubun = version ? pick_kubun(version, in_kubun.value) : null;
+
+      // 選んだ区分に合わせて入力欄を組み替える
+      kubun_note.replaceChildren(kubun?.["注記"] ? warn_line(kubun["注記"]) : "");
+      bar_field.hidden = kubun?.["号"] !== 6;
+      const kingaku_iru = kubun?.["計算する"] === true;
+      kingaku_block.hidden = !kingaku_iru;
+      kyuyo_field.hidden = !kingaku_iru || !needs_kyuyo_nyuryoku(kubun);
+      if (kingaku_iru) {
+        const tsuki_tani = kubun["控除"]?.["単位"] === "その月";
+        kingaku_label.textContent = tsuki_tani
+          ? "その月中に支払う報酬の合計（円）"
+          : "1回に支払うべき金額（円）";
+        kingaku_note.textContent = tsuki_tani
+          ? "控除がその月単位で働くため、その月に支払う報酬をまとめて入れます"
+          : "請求書1通の額。消費税等が区分されているときは、消費税等を含めない額にできます";
+      }
+
+      const input = {
+        shiharai_bi: in_bi.value,
+        shiharaisaki: in_saki.value,
+        shiharaisha: in_sha.value,
+        kubun_key: in_kubun.value,
+        // 未回答は true でも false でもない値のまま渡す（判定側が「未回答」として扱う）
+        bar_keieisha:
+          in_bar.value === "yes" ? true : in_bar.value === "no" ? false : null,
+        kingaku: parse_number(in_kingaku.value),
+        kyuyo_gaku: parse_number(in_kyuyo.value),
+      };
+
+      const r = calc_hoshu_gensen(input, tables);
+      if (!r.ok) {
+        guide.hidden = true;
+        return message_box(r.riyu);
+      }
+
+      // 金額の入力を待つ間も、判定だけは先に出す（この画面の主役は判定のため）。
+      // ただし税額と計算過程は出さない。0円と表示すると「税額は0」と読める
+      const machi = r.kubun?.["計算する"] === true && input.kingaku <= 0;
+      guide.hidden = !machi;
+      if (machi) guide.textContent = "金額を入力すると、税額が下に出ます。";
+      return render_hoshu_gensen_result(r, input, data, machi);
+    });
+  }
+
+  for (const el of [in_bi, in_saki, in_sha, in_kubun, in_bar, in_kingaku, in_kyuyo]) {
+    el.addEventListener("input", recalc);
+    el.addEventListener("change", recalc);
+  }
+
+  const form = h("section", { class: "form" },
+    field("支払う年月日", in_bi, "適用する税率と区分表は、この日で決まります"),
+    field("支払先はどれですか", in_saki),
+    field("支払者（関与先）はどれですか", in_sha),
+    field(
+      "支払の中身はどれですか",
+      in_kubun,
+      "所得税法204条1項に挙がっている1号から8号までが対象です",
+    ),
+    kubun_note,
+    bar_field,
+    kingaku_block,
+  );
+
+  root.replaceChildren(
+    page_title("報酬の源泉徴収", "源泉徴収が必要かどうかと、その税額"),
+    guide,
+    form,
+    result_area,
+  );
+  recalc();
+}
+
+/**
+ * 報酬の源泉徴収の結果・計算過程・根拠を組み立てる。
+ * `machi` は金額の入力待ち。判定は出すが、税額と計算過程は出さない。
+ */
+function render_hoshu_gensen_result(r, input, data, machi = false) {
+  const blocks = [];
+
+  // ★見出しは必ず3値のどれか。税額はその下に置く。
+  //   「計算しない」を「不要」と読ませないための、この画面でいちばん大事な1行
+  const midashi = {
+    [HANTEI.必要]: "源泉徴収が必要です",
+    [HANTEI.不要]: "源泉徴収は不要です",
+    [HANTEI.判定不可]: "この画面では判定できません",
+  }[r.hantei];
+
+  const subs = [{ label: "支払年月日", value: format_hizuke(input.shiharai_bi) }];
+  if (r.kubun && r.kubun["号"] !== null) {
+    subs.push({ label: "該当する号", value: `第${r.kubun["号"]}号` });
+    subs.push({ label: "支払の中身", value: r.kubun["呼称"] });
+  }
+
+  const zeigaku_wo_dasu = r.zeigaku !== null && !machi;
+  blocks.push(
+    result_card(midashi, zeigaku_wo_dasu ? format_en(r.zeigaku) : "―", subs),
+  );
+
+  if (!zeigaku_wo_dasu && r.hantei === HANTEI.必要 && !machi) {
+    blocks.push(
+      warn_line(
+        r.keisan_shinai_riyu ??
+          "金額を入力すると、税額が出ます。源泉徴収が不要という意味ではありません。",
+      ),
+    );
+  }
+
+  if (r.hantei_riyu) {
+    blocks.push(note_block("判定の理由", [r.hantei_riyu]));
+  }
+
+  // 税額の計算過程
+  if (r.keisan && zeigaku_wo_dasu) {
+    const z = r.keisan.zeiritsu;
+    const gokei_ritsu = (percent) =>
+      format_ritsu((percent * (100 + r.keisan.fukko_ritsu_percent)) / 100, 2);
+    const steps = [];
+
+    if (r.keisan.kojo > 0 || r.kubun["控除"]) {
+      steps.push({
+        label: "源泉徴収の対象にする金額",
+        value: format_en(r.keisan.kingaku),
+        note: "消費税等は含めるのが原則。請求書で区分されているときは含めない金額にできます",
+      });
+      steps.push({
+        label: r.kubun["控除"]["呼称"],
+        value: format_en(r.keisan.kojo),
+        note: needs_kyuyo_nyuryoku(r.kubun)
+          ? `${format_en(r.kubun["控除"]["金額"])} − その月中の給与等 ${format_en(r.keisan.kyuyo_gaku)}（所令322条）`
+          : "所得税法施行令322条",
+      });
+      steps.push({
+        label: "差し引いた残額",
+        value: format_en(r.keisan.zangaku),
+        note: r.keisan.zangaku === 0 ? "残額がないため税額は0円です" : null,
+      });
+      steps.push({
+        label: "税率",
+        value: `${gokei_ritsu(z["基本パーセント"])}%`,
+        note: `所得税${z["基本パーセント"]}%（所法205条2号）＋復興特別所得税${r.keisan.fukko_ritsu_percent}%`,
+      });
+    } else {
+      steps.push({
+        label: "源泉徴収の対象にする金額",
+        value: format_en(r.keisan.kingaku),
+        note: "消費税等は含めるのが原則。請求書で区分されているときは含めない金額にできます",
+      });
+      steps.push({
+        label: `${format_en(z["区切り金額"])}以下の部分`,
+        value: `${format_en(Math.min(r.keisan.kingaku, z["区切り金額"]))} × ${gokei_ritsu(z["基本パーセント"])}%`,
+        note: `所得税${z["基本パーセント"]}%（所法205条1号）＋復興特別所得税${r.keisan.fukko_ritsu_percent}%`,
+      });
+      if (r.keisan.chouka_ari) {
+        steps.push({
+          label: `${format_en(z["区切り金額"])}を超える部分`,
+          value: `${format_en(r.keisan.kingaku - z["区切り金額"])} × ${gokei_ritsu(z["超過パーセント"])}%`,
+          note: `所得税${z["超過パーセント"]}%（所法205条1号かっこ書き）＋復興特別所得税${r.keisan.fukko_ritsu_percent}%`,
+        });
+      }
+    }
+
+    steps.push({
+      label: "源泉徴収する所得税及び復興特別所得税",
+      value: format_en(r.zeigaku),
+      note: "所得税と復興特別所得税の合計額で、1円未満を切り捨てます（復興財確法31条2項）",
+    });
+    blocks.push(breakdown(steps));
+  }
+
+  // 対象にする金額の範囲。★税額より、ここを読ませたい
+  if (r.chui.length > 0) {
+    blocks.push(
+      note_block(
+        "源泉徴収の対象にする金額の範囲",
+        r.chui.map((c) => c["文"]),
+      ),
+    );
+  }
+
+  // 区分の注記は入力欄のすぐ上に出しているので、ここでは繰り返さない
+
+  blocks.push(note_block("根拠", [r.konkyo]));
+  blocks.push(note_block("この画面について", data["注記"]));
+  blocks.push(
+    h(
+      "p",
+      { class: "updated" },
+      `区分表の最終確認日：${format_hizuke(data["最終確認日"])}`,
+    ),
+  );
+
+  return blocks;
+}
+
 // ------------------------------------------------------------ 更新の確認画面
 
 /**
@@ -2801,6 +3117,7 @@ const ROUTES = {
   "/gengo": render_gengo,
   "/furusato": render_furusato,
   "/sozokuzei": render_sozokuzei,
+  "/hoshu-gensen": render_hoshu_gensen,
   "/link-shu": render_link_shu,
   "/hojinzei-hayami": render_hojinzei_hayami,
   "/koushin": render_koushin,

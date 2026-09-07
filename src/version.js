@@ -7,7 +7,7 @@
 //   反映されていない端末はそのまま反映されていないと見える。
 //
 // ★sw.js の CACHE_VERSION と必ず同じ文字列にする（tests/version.test.js が一致を検査する）。
-export const APP_VERSION = "v19";
+export const APP_VERSION = "v20";
 
 // 「更新の確認」画面に並べる数値表。
 //
@@ -41,4 +41,5 @@ export const KOUSHIN_ICHIRAN = [
   { file: "furusato", key: "最終確認日" },
   { file: "sozokuzei", key: "最終確認日" },
   { file: "sozokuzei_hyo", key: "取得日" },
+  { file: "hoshu_gensen", key: "最終確認日" },
 ];

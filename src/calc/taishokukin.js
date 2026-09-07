@@ -97,9 +97,15 @@ export function calc_kazei_taishoku_shotoku(kubun, shunyu, kojo, tanki_setting) 
   return Math.floor(kingaku / 1000) * 1000;
 }
 
-/** 復興特別所得税を含めた乗率の分子（分母は1000）。例：2.1% → 1021 */
+/**
+ * 復興特別所得税を含めた乗率の分子（分母は1000）。例：2.1% → 1021
+ *
+ * ★Number() を通すのは、JSONの値が文字列 "2.1" になっていたときに
+ *   (100 + "2.1") が文字列連結の "1002.1" になり、税額が10倍で出るため。
+ *   例外にならず、もっともらしい数字が画面に出てしまう経路なので、入口で潰す。
+ */
 function fukko_bunshi(fukko_ritsu_percent) {
-  return Math.round((100 + fukko_ritsu_percent) * 10);
+  return Math.round((100 + Number(fukko_ritsu_percent)) * 10);
 }
 
 /**
