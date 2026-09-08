@@ -2886,16 +2886,21 @@ async function render_hoshu_gensen() {
     el.addEventListener("change", recalc);
   }
 
+  // ★例示は field の「中」に入れる。外に置くと、直後の warn_line が
+  //   margin-top: -1rem で食い込んできて、例示の最後の行に重なる
+  //   （.warn の負の余白は .field の下余白を詰めるためのもので、間に要素があると崩れる）
+  const kubun_field = field(
+    "支払の中身はどれですか",
+    in_kubun,
+    "所得税法204条1項に挙がっている1号から8号までが対象です",
+  );
+  kubun_field.append(kubun_reiji);
+
   const form = h("section", { class: "form" },
     field("支払う年月日", in_bi, "適用する税率と区分表は、この日で決まります"),
     field("支払先はどれですか", in_saki),
     field("支払者（関与先）はどれですか", in_sha),
-    field(
-      "支払の中身はどれですか",
-      in_kubun,
-      "所得税法204条1項に挙がっている1号から8号までが対象です",
-    ),
-    kubun_reiji,
+    kubun_field,
     kubun_note,
     bar_field,
     kingaku_block,
