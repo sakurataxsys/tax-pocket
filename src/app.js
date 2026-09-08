@@ -2776,6 +2776,11 @@ async function render_hoshu_gensen() {
   const in_kyuyo = money_input({ placeholder: "0" });
 
   // 選んだ区分に合わせて出し入れするので、要素の参照を持っておく
+  //
+  // ★例示は必ず画面に出す。data には最初から持たせていたのに描いていなかったため、
+  //   「弁護士・税理士…など」の「など」に誰が入るのかが、聞かないと分からない状態になっていた。
+  //   関与先の前で開く画面なので、その場で読めなければ意味がない
+  const kubun_reiji = h("p", { class: "field__note" }, "");
   const kubun_note = h("div", {});
   const bar_field = h(
     "div",
@@ -2829,6 +2834,11 @@ async function render_hoshu_gensen() {
       const kubun = version ? pick_kubun(version, in_kubun.value) : null;
 
       // 選んだ区分に合わせて入力欄を組み替える
+      const reiji = kubun?.["例示"] ?? "";
+      // 「どれにも当たらない」で「含まれるもの」と書くと意味が逆に読める
+      const reiji_midashi = kubun?.["種別"] === "課税" ? "含まれるもの" : "たとえば";
+      kubun_reiji.textContent = reiji ? `${reiji_midashi}：${reiji}` : "";
+      kubun_reiji.hidden = !reiji;
       kubun_note.replaceChildren(kubun?.["注記"] ? warn_line(kubun["注記"]) : "");
       bar_field.hidden = kubun?.["号"] !== 6;
       const kingaku_iru = kubun?.["計算する"] === true;
@@ -2885,6 +2895,7 @@ async function render_hoshu_gensen() {
       in_kubun,
       "所得税法204条1項に挙がっている1号から8号までが対象です",
     ),
+    kubun_reiji,
     kubun_note,
     bar_field,
     kingaku_block,
