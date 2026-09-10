@@ -2615,9 +2615,13 @@ function render_sozokuzei_result(r, tables) {
     );
   }
 
+  // ★配偶者がいないときは「配偶者が」と書かない。pattern1 は「全員が法定相続分どおりに
+  //   取得した場合」であって、配偶者の有無で計算は変わらない（見出しだけが変わる）。
   blocks.push(
     result_card(
-      "配偶者が法定相続分を取得した場合の納付総額",
+      r.haigusha_ari
+        ? "配偶者が法定相続分を取得した場合の納付総額"
+        : "法定相続分どおりに取得した場合の納付総額",
       format_en(r.pattern1.nofu_sogaku),
       r.pattern1.meisai.map((m) => ({ label: m.label, value: format_en(m.nofu) })),
     ),
@@ -2659,7 +2663,12 @@ function render_sozokuzei_result(r, tables) {
   blocks.push(breakdown(steps));
 
   blocks.push(
-    note_block("この計算について", tables.sozokuzei["共通の注記"]),
+    // 配偶者の税額軽減の注記は、配偶者がいるときだけ出す（いないのに配偶者の話を出さない）。
+    // ?? [] は、古いデータがキャッシュに残った端末でこの画面ごと落とさないため。
+    note_block("この計算について", [
+      ...tables.sozokuzei["共通の注記"],
+      ...(r.haigusha_ari ? (tables.sozokuzei["配偶者がいる場合の注記"] ?? []) : []),
+    ]),
     note_block("このツールでは扱わないもの（要相談）", tables.sozokuzei["扱わないもの"]),
     note_block("根拠", [
       `適用：${r.tekiyo_hyoji}`,
