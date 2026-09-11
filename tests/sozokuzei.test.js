@@ -16,6 +16,7 @@ import {
   hotei_sozokubun,
   zoyo_kasan_kikan,
   apply_zeiritsu,
+  floor_hyaku,
 } from "../src/calc/sozokuzei.js";
 
 function load(name) {
@@ -56,6 +57,44 @@ describe("① 端数処理", () => {
     const r = calc_sozokuzei(input({ zaisan: 123456789 }), tables);
     assert.equal(r.ok, true);
     for (const m of r.pattern2.meisai) assert.equal(m.nofu % 100, 0, `${m.label} が100円単位でない`);
+  });
+
+  test("百円未満の切捨ては、計算機の誤差だけを吸収する（通則法119条1項）", () => {
+    // 17条の按分が1/3のとき、浮動小数点では真の値をわずかに下回る。
+    // 補正しないと100円欠ける
+    assert.equal(floor_hyaku(27679999.999999996), 27680000);
+    // ★補正は0.000001円。1円未満の端数を切り上げてはいけない
+    //   （ここを0.5にすると下の2件が1100円・1000円になる）
+    assert.equal(floor_hyaku(1099.5), 1000);
+    assert.equal(floor_hyaku(999.999), 900);
+    // 負にはしない（19条1項）
+    assert.equal(floor_hyaku(-5000), 0);
+  });
+
+  test("各人の課税価格は千円未満を切り捨てる（通則法118条1項）", () => {
+    // 贈与財産に千円未満の端数があっても、各人の課税価格は千円単位になる
+    const r = calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        zoyo_3nen: 1234567,
+        kosei: { haigusha: false, jisshi: 2 },
+      }),
+      tables,
+    );
+    assert.equal(r.kazei_kakaku_gokei, 301234000);
+    for (const m of r.pattern1.meisai) assert.equal(m.kazei_kakaku % 1000, 0);
+    // 贈与を引き受けた人は、遺産部分と贈与を足してから切り捨てる
+    assert.equal(r.pattern1.meisai[0].kazei_kakaku, 151234000);
+  });
+
+  test("2割加算も軽減も贈与も無ければ、納付総額は相続税の総額と一致する（17条）", () => {
+    // 按分の分母は「各人の課税価格の合計」。分子だけ千円未満を切り捨てて分母を切り捨て前に
+    // すると、割合の合計が1を割って納付総額が総額を下回る（財産5億円で600円）
+    const r = calc_sozokuzei(
+      input({ zaisan: 500000000, kosei: { haigusha: true, jisshi: 3 } }),
+      tables,
+    );
+    assert.equal(r.pattern2.nofu_sogaku, r.sogaku);
   });
 
   test("贈与税額を引ききれても還付しない（相続税法19条1項・0で止める）", () => {
@@ -288,8 +327,9 @@ describe("⑤ 相続人の構成の分岐", () => {
       count_sozokunin(
         { haigusha: true, jisshi: 0, yoshi: 0, chokkei_sonzoku: 0, kyodai: 2 },
         version["養子の数の制限"],
-      ).seigen_go,
-    );
+      ).minpo_kosei,
+      "shutoku",
+    ).list;
     const kyodai = bun.filter((p) => p.label === "兄弟姉妹");
     assert.equal(kyodai.length, 2);
     assert.equal(kyodai[0].bun, 1 / 8);
@@ -298,12 +338,14 @@ describe("⑤ 相続人の構成の分岐", () => {
   });
 
   test("孫養子は2割加算の対象、代襲相続の孫は対象外（相法18条1項・2項）", () => {
+    // 18条の加算は「財産を取得した者」に当たるので、民法どおりの構成で見る
     const bun = hotei_sozokubun(
       count_sozokunin(
         { haigusha: false, jisshi: 1, yoshi: 1, mago_yoshi: 1, shibo_ko: 1, daishu_mago: 2 },
         version["養子の数の制限"],
-      ).seigen_go,
-    );
+      ).minpo_kosei,
+      "shutoku",
+    ).list;
     assert.equal(bun.find((p) => p.label === "孫養子").nibai_kasan, true);
     assert.equal(bun.find((p) => p.label === "孫（代襲相続）").nibai_kasan, false);
   });
@@ -316,7 +358,7 @@ describe("⑤ 相続人の構成の分岐", () => {
       version["養子の数の制限"],
     );
     assert.equal(c.ninzu, 4);
-    const bun = hotei_sozokubun(c.seigen_go);
+    const bun = hotei_sozokubun(c.seigen_go, "sogaku").list;
     assert.equal(bun.find((p) => p.label === "子（実子）").bun, 1 / 4);
     assert.equal(bun.filter((p) => p.label === "孫（代襲相続）").length, 2);
     assert.equal(bun.find((p) => p.label === "孫（代襲相続）").bun, 1 / 8);
@@ -362,5 +404,143 @@ describe("⑤ 相続人の構成の分岐", () => {
     assert.equal(r.ok, true);
     assert.ok(r.pattern1.nofu_sogaku > 0);
     assert.equal(r.pattern1.kasan_uke_label, "子（実子）");
+  });
+});
+
+// ------------------------ ⑥ 養子の数の制限と、実際に財産を取得する人（15条2項・17条・18条）
+//
+// 相続税法15条2項の養子の数の制限は「相続人の数」＝基礎控除（15条1項）と
+// 相続税の総額（16条は「前条第二項に規定する相続人の数に応じた相続人」と書く）にだけ効く。
+// 17条は「相続又は遺贈により**財産を取得した者**」の課税価格で按分する規定で、
+// 制限で数に入らなかった養子も民法上は相続人として財産を取得し、18条の加算対象になる。
+//
+// ★ここは金額（納付額）で断言する。`nibai_kasan` の旗だけを見るテストは、
+//   2割加算を掛ける1行を消しても通ってしまう（実測で確認済み）。
+
+describe("⑥ 養子の数の制限と、実際に財産を取得する人", () => {
+  // 実子1人・養子2人（うち孫養子1人）・配偶者なし・財産3億円
+  //   民法上の相続人 … 実子1・普通養子1・孫養子1 ＝ 3人
+  //   15条2項の相続人の数 … 実子があるので養子は1人まで ＝ 2人
+  const A = () =>
+    calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        kosei: { haigusha: false, jisshi: 1, yoshi: 2, mago_yoshi: 1 },
+      }),
+      tables,
+    );
+
+  test("基礎控除と相続税の総額は、制限後の相続人の数で計算する（15条1項・16条）", () => {
+    const r = A();
+    assert.equal(r.ok, true);
+    // 3000万＋600万×2人
+    assert.equal(r.kiso_kojo, 42000000);
+    assert.equal(r.kazei_isan, 258000000);
+    // 制限後2人が法定相続分1/2ずつ＝各1億2900万円 → 各3460万円
+    assert.equal(r.kazei_isan_meisai.length, 2);
+    assert.equal(r.sogaku, 69200000);
+  });
+
+  test("納付額の明細は、制限で落ちた養子も含めた実際の相続人で按分する（17条）", () => {
+    const r = A();
+    // 3人が法定相続分どおり（各1/3）取得 → 課税価格は各1億円
+    assert.equal(r.pattern1.meisai.length, 3);
+    for (const m of r.pattern1.meisai) assert.equal(m.kazei_kakaku, 100000000);
+    assert.deepEqual(
+      r.pattern1.meisai.map((m) => m.label),
+      ["子（実子）", "子（養子）", "孫養子"],
+    );
+  });
+
+  test("制限で落ちた孫養子にも2割加算がかかる（18条2項）", () => {
+    const r = A();
+    const [jisshi, yoshi, mago] = r.pattern1.meisai;
+    // 6920万円 × 1/3 ＝ 23,066,666.66… → 百円未満切捨て
+    assert.equal(jisshi.nofu, 23066600);
+    assert.equal(yoshi.nofu, 23066600);
+    // 同じ按分額に20％を加算する。23,066,666.66… × 1.2 ＝ 27,680,000 ちょうど
+    assert.equal(mago.nofu, 27680000);
+    assert.equal(r.pattern1.nofu_sogaku, 73813200);
+  });
+
+  test("養子が全員孫養子なら、制限で落ちた分も含めて全員が2割加算（18条2項）", () => {
+    const r = calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        kosei: { haigusha: false, jisshi: 0, yoshi: 3, mago_yoshi: 3 },
+      }),
+      tables,
+    );
+    // 実子がないので養子は2人まで＝相続人の数2人。総額は上と同じ
+    assert.equal(r.kiso_kojo, 42000000);
+    assert.equal(r.sogaku, 69200000);
+    // 民法上は3人が相続人。全員が2割加算
+    assert.equal(r.pattern1.meisai.length, 3);
+    for (const m of r.pattern1.meisai) assert.equal(m.nofu, 27680000);
+    assert.equal(r.pattern1.nofu_sogaku, 83040000);
+  });
+
+  test("制限にかからない構成では、これまでと同じ結果になる（回帰）", () => {
+    const r = calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        kosei: { haigusha: false, jisshi: 1, yoshi: 1, mago_yoshi: 1 },
+      }),
+      tables,
+    );
+    assert.equal(r.kiso_kojo, 42000000);
+    assert.equal(r.sogaku, 69200000);
+    assert.equal(r.pattern1.meisai.length, 2);
+    assert.equal(r.pattern1.meisai[0].nofu, 34600000); // 実子
+    assert.equal(r.pattern1.meisai[1].nofu, 41520000); // 孫養子＝34,600,000×1.2
+    assert.equal(r.pattern1.nofu_sogaku, 76120000);
+  });
+
+  test("保険金の非課税枠は制限後の相続人の数で数える（12条1項6号は15条2項の数を引く）", () => {
+    const r = calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        hokenkin: 20000000,
+        kosei: { haigusha: false, jisshi: 1, yoshi: 2, mago_yoshi: 1 },
+      }),
+      tables,
+    );
+    // 500万円×2人。民法どおりの3人で数えると1500万円になってしまう
+    assert.equal(r.hikazei_waku, 10000000);
+  });
+
+  test("贈与を引き受けるのは配偶者以外の相続人の先頭（実子がいれば実子）", () => {
+    const r = calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        zoyo_3nen: 10000000,
+        kosei: { haigusha: false, jisshi: 1, yoshi: 2, mago_yoshi: 1 },
+      }),
+      tables,
+    );
+    assert.equal(r.pattern1.kasan_uke_label, "子（実子）");
+  });
+
+  test("2割加算をしてから贈与税額を引く（18条→19条の順序）", () => {
+    // 孫養子3人（実子なし）・財産3億円・3年以内の贈与2000万円・その贈与税900万円
+    //   相続人の数2人 → 基礎控除4200万／課税価格の合計3億2000万／課税遺産2億7800万
+    //   総額＝(1億3900万×40%－1700万)×2＝7720万
+    //   引受人の課税価格＝3億×1/3＋2000万＝1億2000万
+    //   7720万×1億2000万/3億2000万＝2895万 →×1.2＝3474万 →－900万＝2574万
+    //   ★順序を逆にすると (2895万－900万)×1.2＝2394万 になり、180万円ずれる
+    const r = calc_sozokuzei(
+      input({
+        zaisan: 300000000,
+        zoyo_3nen: 20000000,
+        zoyozei: 9000000,
+        kosei: { haigusha: false, jisshi: 0, yoshi: 3, mago_yoshi: 3 },
+      }),
+      tables,
+    );
+    assert.equal(r.sogaku, 77200000);
+    assert.equal(r.pattern1.meisai[0].kazei_kakaku, 120000000);
+    assert.equal(r.pattern1.meisai[0].nofu, 25740000);
+    // 贈与を引き受けていない孫養子は 7720万×1億/3億2000万×1.2
+    assert.equal(r.pattern1.meisai[1].nofu, 28950000);
   });
 });

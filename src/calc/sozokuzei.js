@@ -30,9 +30,15 @@ function floor_sen(gaku) {
 /**
  * 納付すべき税額の百円未満切捨て（国税通則法119条1項）。
  * 負にはしない（贈与税額控除で引ききれない分は還付されない。相続税法19条1項）。
+ *
+ * ★切り捨てる前に、計算機の誤差だけを吸収する（0.000001円を足す）。
+ *   17条の按分は1/3のように割り切れないことが多く、浮動小数点（小数を近似で持つ方式）では
+ *   真の値をわずかに下回る。そのまま切り捨てると本来より100円少ない額が出る。
+ *   例：6920万円 × 1/3 × 1.2 は 27,680,000円ちょうどだが、計算機の中では 27,679,999.999…。
+ *   足す量は1円の百万分の1なので、法令の端数処理（百円未満切捨て）の結果は動かさない。
  */
-function floor_hyaku(gaku) {
-  return Math.max(0, Math.floor(gaku / 100) * 100);
+export function floor_hyaku(gaku) {
+  return Math.max(0, Math.floor((gaku + 1e-6) / 100) * 100);
 }
 
 // ------------------------------------------------------- 相続人の数と相続分
@@ -62,38 +68,49 @@ export function count_sozokunin(kosei, setting) {
   const jisshi_minashi = jisshi + daishu;
   const seigen = jisshi_minashi > 0 ? setting["実子がある場合"] : setting["実子がない場合"];
   const yoshi_yuko = Math.min(yoshi, seigen);
-  // 制限で落ちるのは、まず孫養子でない養子から数えるほうが納税者に不利にならないが、
-  // 落ちた養子は相続人の数にも法定相続分にも入らないため、2割加算の対象人数も減る。
-  // 単純に「孫養子でない養子を先に有効とする」で固定する（結果が入力順に依存しないようにする）。
+  // 制限で落とす順は「孫養子でない養子を先に有効とする」で固定する（入力順で結果が変わらないようにする）。
+  // ★この制限は基礎控除（15条1項）と総額（16条）にだけ効く。落ちた養子も民法上は相続人で、
+  //   財産を取得すれば17条の按分に入り18条の加算も受けるので、下の minpo_kosei で別に持つ。
   const futsu_yoshi_yuko = Math.min(yoshi - mago_yoshi, yoshi_yuko);
   const mago_yoshi_yuko = yoshi_yuko - futsu_yoshi_yuko;
 
-  const ko_kabu = jisshi + futsu_yoshi_yuko + mago_yoshi_yuko + (daishu > 0 ? 1 : 0);
-
-  let junni = null;
-  if (ko_kabu > 0) junni = "ko";
-  else if (sonzoku > 0) junni = "sonzoku";
-  else if (kyodai > 0) junni = "kyodai";
-
   const haigusha = kosei.haigusha === true;
-  let ketsuzoku_ninzu = 0;
-  if (junni === "ko") ketsuzoku_ninzu = jisshi + futsu_yoshi_yuko + mago_yoshi_yuko + daishu;
-  else if (junni === "sonzoku") ketsuzoku_ninzu = sonzoku;
-  else if (junni === "kyodai") ketsuzoku_ninzu = kyodai;
 
-  return {
-    ninzu: (haigusha ? 1 : 0) + ketsuzoku_ninzu,
-    seigen_go: {
+  /** 養子の有効数だけを差し替えて、相続分を出すための構成を組む */
+  const kumu = (futsu, mago) => {
+    const ko_kabu = jisshi + futsu + mago + (daishu > 0 ? 1 : 0);
+    let junni = null;
+    if (ko_kabu > 0) junni = "ko";
+    else if (sonzoku > 0) junni = "sonzoku";
+    else if (kyodai > 0) junni = "kyodai";
+    return {
       haigusha,
       junni,
       jisshi,
-      futsu_yoshi: futsu_yoshi_yuko,
-      mago_yoshi: mago_yoshi_yuko,
+      futsu_yoshi: futsu,
+      mago_yoshi: mago,
       daishu,
       ko_kabu,
       chokkei_sonzoku: junni === "sonzoku" ? sonzoku : 0,
       kyodai: junni === "kyodai" ? kyodai : 0,
-    },
+    };
+  };
+
+  // 15条2項の制限を当てた構成（基礎控除と16条の総額に使う）
+  const seigen_go = kumu(futsu_yoshi_yuko, mago_yoshi_yuko);
+  // 制限を当てない、民法どおりの構成（17条の按分と18条の加算に使う）
+  const minpo_kosei = kumu(yoshi - mago_yoshi, mago_yoshi);
+
+  let ketsuzoku_ninzu = 0;
+  if (seigen_go.junni === "ko") {
+    ketsuzoku_ninzu = jisshi + futsu_yoshi_yuko + mago_yoshi_yuko + daishu;
+  } else if (seigen_go.junni === "sonzoku") ketsuzoku_ninzu = sonzoku;
+  else if (seigen_go.junni === "kyodai") ketsuzoku_ninzu = kyodai;
+
+  return {
+    ninzu: (haigusha ? 1 : 0) + ketsuzoku_ninzu,
+    seigen_go,
+    minpo_kosei,
     yoshi_seigen_tekiyo: yoshi > yoshi_yuko,
   };
 }
@@ -101,17 +118,25 @@ export function count_sozokunin(kosei, setting) {
 /**
  * 民法900条・901条の法定相続分を、相続人1人ずつの配列で返す。
  *
- * ★引数は count_sozokunin が返した「制限適用後の構成」にする。
- *   実際の養子の数で相続分を回すと相続税法16条の総額がずれるため、入口で誤用を塞ぐ。
+ * ★用途を必ず渡す。同じ形の構成を2種類扱うので、取り違えると誤りが黙って通る。
+ *   "sogaku"  … 相続税法16条の総額計算用。15条2項の制限を当てた構成（seigen_go）を渡す
+ *   "shutoku" … 17条の按分と18条の加算用。民法どおりの構成（minpo_kosei）を渡す
+ *   総額を民法どおりの人数で回すと相続税の総額が過小に出る
+ *   （実子1・養子2・財産3億円で1280万円の過小。テストで固定してある）。
  * ★代襲相続人（孫）は、その親（先に亡くなった子）1人分を頭数で等分する（901条1項ただし書）。
  *
  * nibai_kasan は相続税法18条の2割加算の対象か。
  *   配偶者・一親等の血族（子・養子・父母）＝対象外
  *   孫養子＝対象（18条2項）／代襲相続人の孫＝対象外（18条1項括弧書き）／兄弟姉妹＝対象
+ *
+ * 戻り値は { yoto, list }。用途の印を持たせ、受け取る側でも確かめる。
  */
-export function hotei_sozokubun(seigen_go) {
+export function hotei_sozokubun(kosei, yoto) {
+  if (yoto !== "sogaku" && yoto !== "shutoku") {
+    throw new Error('hotei_sozokubun: 用途に "sogaku" か "shutoku" を渡すこと');
+  }
   const list = [];
-  const { haigusha, junni } = seigen_go;
+  const { haigusha, junni } = kosei;
 
   // 民法900条1〜3号：配偶者の相続分
   let haigusha_bun = 0;
@@ -127,34 +152,34 @@ export function hotei_sozokubun(seigen_go) {
 
   if (junni === "ko") {
     // 民法900条4号：子が数人あるときは相等しい。代襲は901条で1株を分ける
-    const kabu = ketsuzoku_bun / seigen_go.ko_kabu;
-    for (let i = 0; i < seigen_go.jisshi; i++) {
+    const kabu = ketsuzoku_bun / kosei.ko_kabu;
+    for (let i = 0; i < kosei.jisshi; i++) {
       list.push({ key: `jisshi${i}`, label: "子（実子）", bun: kabu, nibai_kasan: false });
     }
-    for (let i = 0; i < seigen_go.futsu_yoshi; i++) {
+    for (let i = 0; i < kosei.futsu_yoshi; i++) {
       list.push({ key: `yoshi${i}`, label: "子（養子）", bun: kabu, nibai_kasan: false });
     }
-    for (let i = 0; i < seigen_go.mago_yoshi; i++) {
+    for (let i = 0; i < kosei.mago_yoshi; i++) {
       list.push({ key: `magoyoshi${i}`, label: "孫養子", bun: kabu, nibai_kasan: true });
     }
-    if (seigen_go.daishu > 0) {
-      const mago_bun = kabu / seigen_go.daishu;
-      for (let i = 0; i < seigen_go.daishu; i++) {
+    if (kosei.daishu > 0) {
+      const mago_bun = kabu / kosei.daishu;
+      for (let i = 0; i < kosei.daishu; i++) {
         list.push({ key: `daishu${i}`, label: "孫（代襲相続）", bun: mago_bun, nibai_kasan: false });
       }
     }
   } else if (junni === "sonzoku") {
-    const b = ketsuzoku_bun / seigen_go.chokkei_sonzoku;
-    for (let i = 0; i < seigen_go.chokkei_sonzoku; i++) {
+    const b = ketsuzoku_bun / kosei.chokkei_sonzoku;
+    for (let i = 0; i < kosei.chokkei_sonzoku; i++) {
       list.push({ key: `sonzoku${i}`, label: "父母", bun: b, nibai_kasan: false });
     }
   } else if (junni === "kyodai") {
-    const b = ketsuzoku_bun / seigen_go.kyodai;
-    for (let i = 0; i < seigen_go.kyodai; i++) {
+    const b = ketsuzoku_bun / kosei.kyodai;
+    for (let i = 0; i < kosei.kyodai; i++) {
       list.push({ key: `kyodai${i}`, label: "兄弟姉妹", bun: b, nibai_kasan: true });
     }
   }
-  return list;
+  return { yoto, list };
 }
 
 // ------------------------------------------------------------ 贈与加算の期間
@@ -262,7 +287,7 @@ export function calc_sozokuzei(input, tables) {
     };
   }
 
-  const { ninzu, seigen_go, yoshi_seigen_tekiyo } = count_sozokunin(
+  const { ninzu, seigen_go, minpo_kosei, yoshi_seigen_tekiyo } = count_sozokunin(
     input.kosei ?? {},
     version["養子の数の制限"],
   );
@@ -300,7 +325,13 @@ export function calc_sozokuzei(input, tables) {
   const kazei_isan = Math.max(0, kazei_kakaku_gokei - kiso_kojo);
 
   // ---- 相続税の総額（相続税法16条）
-  const bunlist = hotei_sozokubun(seigen_go);
+  //
+  // ★16条は「前条第二項に規定する相続人の数に応じた相続人」＝15条2項の制限後の人数で回す。
+  //   17条・18条の按分と加算は「財産を取得した者」＝民法どおりの相続人で回す（shutoku_bun）。
+  //   条文が別のものを指しているので、リストも別に持つ。
+  const sogaku_bun = hotei_sozokubun(seigen_go, "sogaku");
+  const shutoku_bun = hotei_sozokubun(minpo_kosei, "shutoku");
+  const bunlist = sogaku_bun.list;
   const hyo = tables.sozokuzei_hyo["税率表"];
   const kazei_isan_meisai = [];
   let sogaku = 0;
@@ -323,8 +354,8 @@ export function calc_sozokuzei(input, tables) {
   }
   sogaku = Math.floor(sogaku);
 
-  // ---- 2パターンの納付総額
-  const pattern1 = calc_pattern(bunlist, {
+  // ---- 2パターンの納付総額（取得する人は民法どおりの相続人＝shutoku_bun）
+  const pattern1 = calc_pattern(shutoku_bun, {
     haigusha_shutoku: "hotei",
     sogaku,
     kazei_kakaku_gokei,
@@ -333,8 +364,8 @@ export function calc_sozokuzei(input, tables) {
     version,
   });
   // 配偶者以外に相続人がいなければ「配偶者が取得しない場合」は成り立たない
-  const pattern2 = seigen_go.haigusha && bunlist.length > 1
-    ? calc_pattern(bunlist, {
+  const pattern2 = seigen_go.haigusha && shutoku_bun.list.length > 1
+    ? calc_pattern(shutoku_bun, {
         haigusha_shutoku: "nashi",
         sogaku,
         kazei_kakaku_gokei,
@@ -348,6 +379,9 @@ export function calc_sozokuzei(input, tables) {
     ok: true,
     tekiyo_hyoji: version["適用表示"],
     ninzu,
+    // 実際に財産を取得する相続人の数（民法どおり）。ninzu（15条2項の制限後）と食い違うことがあり、
+    // 画面はその食い違いを説明する必要がある
+    shutoku_ninzu: shutoku_bun.list.length,
     seigen_go,
     yoshi_seigen_tekiyo,
     hikazei_waku,
@@ -380,7 +414,13 @@ export function calc_sozokuzei(input, tables) {
  *   相続税法19条は人ごとの規定で、100万円控除も贈与税額控除も人単位で効くため、
  *   誰が受けたかを決めないと各人の税額が出ない（画面にこの前提を表示する）。
  */
-function calc_pattern(bunlist, o) {
+function calc_pattern(shutoku_bun, o) {
+  // ★16条の総額計算用のリスト（制限後）を渡すと、取得する人がその人数に縮んで
+  //   2割加算が消える。用途の印で塞ぐ（判断ログ D-44）。
+  if (shutoku_bun?.yoto !== "shutoku") {
+    throw new Error("calc_pattern には民法どおりの構成（shutoku）を渡すこと");
+  }
+  const bunlist = shutoku_bun.list;
   const { sogaku, kazei_kakaku_gokei, zoyo_kasan, zoyozei, version } = o;
 
   // 取得割合を決める
@@ -393,20 +433,41 @@ function calc_pattern(bunlist, o) {
     for (const p of bunlist) wariai.set(p.key, p.key === "haigusha" ? 0 : p.bun / bunbo);
   }
 
-  // 贈与加算を引き受ける人（配偶者以外の相続人の先頭）
-  const kasan_uke = bunlist.find((p) => p.key !== "haigusha")?.key ?? null;
+  // 贈与加算を引き受ける人（配偶者以外の相続人の先頭）。
+  // ★相続人が配偶者だけなら配偶者が引き受ける。誰にも割り当てないと、課税価格の合計には
+  //   贈与が入っているのに各人の課税価格には入らず、17条の分母と分子が合わなくなる。
+  const kasan_uke = (bunlist.find((p) => p.key !== "haigusha") ?? bunlist[0])?.key ?? null;
   const isan_bubun = Math.max(0, kazei_kakaku_gokei - zoyo_kasan);
+  let zoyozei_hikirenai = 0;
 
-  const meisai = bunlist.map((p) => {
-    const kazei_kakaku =
-      floor_sen(isan_bubun * (wariai.get(p.key) ?? 0)) + (p.key === kasan_uke ? zoyo_kasan : 0);
-    const wari = kazei_kakaku_gokei > 0 ? kazei_kakaku / kazei_kakaku_gokei : 0;
+  // 各人の課税価格（国税通則法118条1項の千円未満切捨て）。
+  // ★贈与加算を足してから切り捨てる。先に切ってから足すと、贈与額に千円未満の端数があるとき
+  //   各人の課税価格が千円単位にならない（118条1項は課税標準そのものの端数規定）。
+  const kakaku = bunlist.map((p) => ({
+    p,
+    kazei_kakaku: floor_sen(
+      isan_bubun * (wariai.get(p.key) ?? 0) + (p.key === kasan_uke ? zoyo_kasan : 0),
+    ),
+  }));
+  // ★17条の分母は「財産を取得したすべての者に係る課税価格の合計額」。
+  //   分子（各人の課税価格）を千円未満で切り捨てているので、分母も切り捨てた後の合計にする。
+  //   揃えないと按分割合の合計が1を割り、2割加算も配偶者の軽減も贈与も無いのに
+  //   納付総額が相続税の総額を下回る（財産5億円・配偶者＋実子3人で600円。判断ログ D-44）。
+  const gokei = kakaku.reduce((s, k) => s + k.kazei_kakaku, 0);
+
+  const meisai = kakaku.map(({ p, kazei_kakaku }) => {
+    const wari = gokei > 0 ? kazei_kakaku / gokei : 0;
     // 相続税法17条：総額を課税価格の割合で按分する（割合は丸めない）
     let zei = sogaku * wari;
     // 相続税法18条：一親等の血族及び配偶者以外は20％加算
     if (p.nibai_kasan) zei *= 1 + version["相続税額の加算"]["加算率パーセント"] / 100;
     // 相続税法19条1項：加算された贈与財産に課された贈与税額を控除する（引ききれても還付しない）
-    if (p.key === kasan_uke) zei -= zoyozei;
+    if (p.key === kasan_uke) {
+      zei -= zoyozei;
+      // 引ききれなかった額。相続人が増えるとこの人の取り分が縮んで引ききれなくなり、
+      // 総額が同じでも納付総額が増える。画面でその理由を書くために持ち帰る（1円未満は誤差）
+      if (zei < -0.5) zoyozei_hikirenai = -zei;
+    }
     return { key: p.key, label: p.label, kazei_kakaku, zei_before_keigen: zei };
   });
 
@@ -416,15 +477,12 @@ function calc_pattern(bunlist, o) {
   if (h) {
     const haigusha_bun = bunlist.find((p) => p.key === "haigusha").bun;
     const only_haigusha = bunlist.length === 1;
+    // 19条の2第1項2号イの「課税価格の合計額」も、17条の分母と同じ数（各人の課税価格の合計）で揃える
     const i_gaku = only_haigusha
-      ? kazei_kakaku_gokei
-      : Math.max(
-          kazei_kakaku_gokei * haigusha_bun,
-          version["配偶者の税額軽減"]["最低保障額"],
-        );
+      ? gokei
+      : Math.max(gokei * haigusha_bun, version["配偶者の税額軽減"]["最低保障額"]);
     const sukunai = Math.min(i_gaku, h.kazei_kakaku);
-    const jogen =
-      kazei_kakaku_gokei > 0 ? sogaku * (sukunai / kazei_kakaku_gokei) : 0;
+    const jogen = gokei > 0 ? sogaku * (sukunai / gokei) : 0;
     haigusha_keigen = Math.min(Math.max(0, h.zei_before_keigen), jogen);
   }
 
@@ -438,6 +496,7 @@ function calc_pattern(bunlist, o) {
     haigusha_shutoku: o.haigusha_shutoku,
     kasan_uke_label: kasan_uke ? bunlist.find((p) => p.key === kasan_uke).label : null,
     haigusha_keigen: Math.floor(haigusha_keigen),
+    zoyozei_hikirenai: Math.floor(zoyozei_hikirenai),
     meisai: kaku,
     nofu_sogaku: kaku.reduce((s, m) => s + m.nofu, 0),
   };

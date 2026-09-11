@@ -2463,8 +2463,18 @@ async function render_sozokuzei() {
     field("債務・葬式費用の合計額（円）", in_saimu),
     field("配偶者", in_haigusha),
     field("子の人数（実子）（人）", in_jisshi),
-    field("養子の人数（人）", in_yoshi),
-    field("うち孫養子の人数（人）", in_mago_yoshi),
+    // 15条3項1号の「実子とみなす」養子は、この欄ではなく実子の欄に入れてもらう。
+    // 入力欄を増やすより案内のほうが軽く、結果は同じになる（2割加算の対象にもならない）。
+    field(
+      "養子の人数（人）",
+      in_yoshi,
+      "特別養子と、配偶者の連れ子の養子は「子の人数（実子）」に入れてください（相続税法15条3項1号で実子とみなします）",
+    ),
+    field(
+      "うち孫養子の人数（人）",
+      in_mago_yoshi,
+      "上の「養子の人数」に含めて数えてください。孫養子は2割加算の対象です（相続税法18条2項）",
+    ),
     field(
       "先に亡くなった子の人数（人）",
       in_shibo_ko,
@@ -2598,21 +2608,42 @@ function render_sozokuzei_result(r, tables) {
       { label: "課税価格の合計額", value: format_en(r.kazei_kakaku_gokei) },
       { label: "基礎控除額", value: format_en(r.kiso_kojo) },
       { label: "課税遺産総額", value: format_en(r.kazei_isan) },
-      { label: "法定相続人の数", value: `${r.ninzu}人` },
+      { label: "相続人の数（相続税法15条2項）", value: `${r.ninzu}人` },
     ]),
   );
 
   blocks.push(warn_line("入力した評価額に基づく概算です。このツールは財産を評価しません。"));
 
   if (r.yoshi_seigen_tekiyo) {
-    blocks.push(warn_line("養子の数は相続税法15条2項の制限を適用して数えています。"));
-  }
-  if (r.zoyo_kasan > 0) {
+    // ★人数が2つ出る。基礎控除・総額は制限後（15条2項）、納付額は実際に取得する人（17条・18条）。
+    //   同じ画面に違う人数が並ぶので、どちらが何に効くのかを必ず添える。
     blocks.push(
       warn_line(
-        "贈与は『配偶者以外の相続人1人が受けたもの』として計算しています（相続税法19条は人ごとの規定のため）。",
+        `基礎控除額と相続税の総額は、養子の数の制限（相続税法15条2項）を当てた${r.ninzu}人で計算しています。`,
       ),
     );
+    blocks.push(
+      warn_line(
+        `納付額は、民法上の相続人${r.shutoku_ninzu}人で按分しています。制限で数に入らなかった養子も財産を取得し、孫養子であれば2割加算の対象です（相続税法17条・18条）。`,
+      ),
+    );
+  }
+  // 相続人が1人しかいなければ「誰が受けたか」の前提を置く必要がない（説明する相手がいない）
+  if (r.zoyo_kasan > 0 && r.shutoku_ninzu > 1) {
+    blocks.push(
+      warn_line(
+        `贈与は『${r.pattern1.kasan_uke_label}1人が受けたもの』として計算しています（相続税法19条は人ごとの規定のため）。`,
+      ),
+    );
+    if (r.pattern1.zoyozei_hikirenai > 0 || r.pattern2?.zoyozei_hikirenai > 0) {
+      // 相続人が増えるとその1人の取り分が小さくなり、贈与税額を引ききれずに納付総額が増える。
+      // 総額は1円も変わらないのに納付総額だけ動くので、理由を書かないと画面が説明できない。
+      blocks.push(
+        warn_line(
+          "その1人の取り分に対して贈与税額が大きいため、引ききれない分があります。引ききれない贈与税額は還付されません（相続税法19条1項）。",
+        ),
+      );
+    }
   }
 
   // ★配偶者がいないときは「配偶者が」と書かない。pattern1 は「全員が法定相続分どおりに
@@ -2637,7 +2668,7 @@ function render_sozokuzei_result(r, tables) {
   }
 
   const steps = [
-    { label: "法定相続人の数", value: `${r.ninzu}人` },
+    { label: "相続人の数（相続税法15条2項）", value: `${r.ninzu}人` },
     { label: "基礎控除額", value: format_en(r.kiso_kojo) },
     {
       label: "課税価格の合計額",
