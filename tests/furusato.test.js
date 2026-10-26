@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 
 import { calc_furusato, pick_wariai, calc_joge_a } from "../src/calc/furusato.js";
 import { pick_version } from "../src/calc/version_pick.js";
+import { fuka_zeiritsu } from "../src/calc/fuka_zeiritsu.js";
 
 function load(name) {
   return JSON.parse(
@@ -461,8 +462,9 @@ describe("⑥ data/furusato.json の整合", () => {
   test("★読み替え後の割合は「90％−所得税の税率×1.021」と全区分で一致する", () => {
     // 数値としては一致するが、法令は式ではなく固定値で定めている（附則5条の6）。
     // 一致しなくなったら、読替えの改正か所得税率の改正のどちらかを取りこぼしている。
+    // 乗率は画面と同じ関数で取る（令和9年分以後は復興1.1%＋防衛1%の合計＝1.021）
     const rv = pick_version(tables.income_tax["版"], NEN_R8);
-    const fukko = 1 + rv["復興特別所得税率パーセント"] / 100;
+    const fukko = 1 + fuka_zeiritsu(rv).gokei / 100;
     for (const row of TOKUREI["割合表"]) {
       const kazei = row["課税総所得の上限"] ?? 50000000;
       const zeiritsu = rv["速算表"].find(
@@ -498,5 +500,19 @@ describe("⑥ data/furusato.json の整合", () => {
         false,
       );
     }
+  });
+
+  test("復興特別所得税・防衛特別所得税の率が壊れていたら、限度額を出さずに止まる", () => {
+    // ★いまは手前の所得税エンジンが同じ版を読んで先に止まる。furusato.js 自身の null ガードは
+    //   この経路では働かない（二重の守り）。ここでは「限度額が出ない」ことだけを固定する
+    const kowashi = {
+      ...tables,
+      income_tax: {
+        ...tables.income_tax,
+        版: tables.income_tax["版"].map((b) => ({ ...b, 付加税率パーセント: { 復興特別所得税: "x" } })),
+      },
+    };
+    const r = calc_furusato(input({ nen: NEN_R8 }), kowashi);
+    assert.equal(r.ok, false);
   });
 });

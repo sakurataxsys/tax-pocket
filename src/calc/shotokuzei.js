@@ -29,6 +29,7 @@
 // 金額・税率はこのファイルに書かない。すべて data/*.json から受け取る（設計原則3）。
 
 import { pick_version } from "./version_pick.js";
+import { fuka_zeiritsu } from "./fuka_zeiritsu.js";
 
 // ── 共通の小道具 ──────────────────────────────────────────
 
@@ -594,6 +595,20 @@ export function calc_shotokuzei_engine(input, tables) {
   if (!sv || !jv || !bv || !rv) {
     return { ok: false, riyu: `${input.nen}年分は収録していません。` };
   }
+  // 復興特別所得税の率は income_tax_rates.json から取る（shotokuzei.json の同名キーは読んでいない）
+  const fz = fuka_zeiritsu(rv);
+  if (fz === null) {
+    return { ok: false, riyu: "所得税の税率表の形が崩れています。事務所に知らせてください。" };
+  }
+  // ★防衛特別所得税（令和9年分から1%）は、このエンジンではまだ計算しない。
+  //   復興だけを掛けると1%を黙って落とすので、令和9年分の版を足しても止まるようにしておく。
+  //   対応するときは、確定申告で別の税目になる防衛特別所得税を別の行で持つ（docs/改正対応手順.md）
+  if (fz.boei > 0) {
+    return {
+      ok: false,
+      riyu: `${input.nen}年分から加わる防衛特別所得税に、所得税の計算がまだ対応していません。`,
+    };
+  }
 
   const bunri = input.bunri ?? [];
   for (const b of bunri) {
@@ -716,7 +731,7 @@ export function calc_shotokuzei_engine(input, tables) {
   });
   // 基準所得税額（復興財確法12条）。このツールは税額控除を扱わないため算出税額と同額
   const kijun = sanshutsu + bunri_zeigaku_meisai.reduce((a, b) => a + b.zeigaku, 0);
-  const fukko = (kijun * rv["復興特別所得税率パーセント"]) / 100;
+  const fukko = (kijun * fz.fukko) / 100;
 
   // ── 住民税 ──
   const j_kazei = calc_kazei_shotoku(sogo, j_kojo_gokei);

@@ -137,16 +137,80 @@ describe("境界値（所法205条1号の100万円）", () => {
   });
 
   test("復興特別所得税の乗率が文字列でも、税額が10倍にならない", () => {
-    // (100 + "2.1") が文字列連結になると分子が 10021 になる
-    const moji = {
+    // (100 + "2.1") が文字列連結になると分子が 10021 になる。
+    // ★率は「付加税率パーセント」から読むので、壊すのもそちら（旧キーを壊しても何も検査しない）
+    for (const [nen, fz] of [
+      [2026, { 復興特別所得税: "2.1", 防衛特別所得税: "0" }],
+      [2027, { 復興特別所得税: "1.1", 防衛特別所得税: "1" }],
+    ]) {
+      const moji = {
+        ...income_tax_rates,
+        版: income_tax_rates["版"].map((b) => ({ ...b, 付加税率パーセント: fz })),
+      };
+      const r = calc_hoshu_gensen(input({ kingaku: 33333, shiharai_bi: `${nen}-06-01` }), {
+        hoshu_gensen,
+        income_tax_rates: moji,
+      });
+      assert.equal(r.zeigaku, 3403, `${nen}年`);
+    }
+  });
+
+  test("付加税率が壊れていたら、税額を出さずに理由を返す（判定は残す）", () => {
+    const kowashi = {
       ...income_tax_rates,
-      版: [{ ...income_tax_rates["版"][0], 復興特別所得税率パーセント: "2.1" }],
+      版: income_tax_rates["版"].map((b) => ({
+        ...b,
+        付加税率パーセント: { 復興特別所得税: 1.1 },
+      })),
     };
-    const r = calc_hoshu_gensen(input({ kingaku: 33333 }), {
+    const r = calc_hoshu_gensen(input({ shiharai_bi: "2027-01-01" }), {
       hoshu_gensen,
-      income_tax_rates: moji,
+      income_tax_rates: kowashi,
     });
-    assert.equal(r.zeigaku, 3403);
+    assert.equal(r.hantei, HANTEI.必要);
+    assert.equal(r.zeigaku, null);
+    assert.match(r.keisan_shinai_riyu, /税率表/);
+  });
+});
+
+describe("防衛特別所得税（令和9年1月1日以後の徴収から。防衛財源確保法5条の26）", () => {
+  test("令和8年12月31日と令和9年1月1日の支払で、税額は1円も変わらない（合計2.1%は不変）", () => {
+    for (const over of [
+      { kingaku: 33333 },
+      { kingaku: 1000000 },
+      { kingaku: 1500000 }, // 100万円超の20%部分
+      { kingaku: 1234567 },
+      { kubun_key: "2-b", kingaku: 54321 }, // 205条2号（1万円控除）
+    ]) {
+      const mae = calc_hoshu_gensen(input({ ...over, shiharai_bi: "2026-12-31" }), tables);
+      const ato = calc_hoshu_gensen(input({ ...over, shiharai_bi: "2027-01-01" }), tables);
+      assert.equal(ato.zeigaku, mae.zeigaku, JSON.stringify(over));
+    }
+    // 1,500,000：100万 × 10.21% = 102,100 ＋ 50万 × 20.42% = 102,100 → 204,200
+    assert.equal(
+      calc_hoshu_gensen(input({ kingaku: 1500000, shiharai_bi: "2027-01-01" }), tables).zeigaku,
+      204200,
+    );
+  });
+
+  test("令和9年の支払は内訳が防衛1%・復興1.1%、画面の合計の率は10.21%・20.42%のまま", () => {
+    const r = calc_hoshu_gensen(input({ shiharai_bi: "2027-01-01" }), tables);
+    assert.equal(r.keisan.boei_ritsu_percent, 1);
+    assert.equal(r.keisan.fukko_ritsu_percent, 1.1);
+    assert.equal(r.keisan.fuka_gokei_percent, 2.1);
+    // ★復興の率だけから組むと 10.11% になる（以前の画面の組み方）
+    assert.deepEqual(r.keisan.gokei_ritsu_percent, { 基本: 10.21, 超過: 20.42 });
+    assert.equal(r.keisan.zeimoku_meisho, "所得税、防衛特別所得税及び復興特別所得税");
+    assert.match(r.keisan.nen_matagi_chui, /附則88条2項/);
+  });
+
+  test("令和8年の支払は従来どおり（防衛0・年またぎの注意なし）", () => {
+    const r = calc_hoshu_gensen(input({ shiharai_bi: "2026-12-31" }), tables);
+    assert.equal(r.keisan.boei_ritsu_percent, 0);
+    assert.equal(r.keisan.fukko_ritsu_percent, 2.1);
+    assert.deepEqual(r.keisan.gokei_ritsu_percent, { 基本: 10.21, 超過: 20.42 });
+    assert.equal(r.keisan.zeimoku_meisho, "所得税及び復興特別所得税");
+    assert.equal(r.keisan.nen_matagi_chui, null);
   });
 });
 
@@ -218,8 +282,9 @@ describe("版の分岐", () => {
   });
 
   test("適用終了日を過ぎた支払日では、版が見つからず null を返す", () => {
-    // ★令和20年以後の版は先回りして data に書かない（furusato.json と同じ作法）。
-    //   ここは合成データで、期限が来たときに黙って古い版を使わないことだけを固定する
+    // ★先の期限の版は先回りして data に書かない（furusato.json と同じ作法）。
+    //   ここは合成データで、期限が来たときに黙って古い版を使わないことだけを固定する。
+    //   2037/2038 は合成の境界で、復興特別所得税の期限（令和29年＝2047年）とは関係しない
     const uchikiri = [
       { 適用開始日: "2013-01-01", 適用終了日: "2037-12-31", 区分: [] },
     ];

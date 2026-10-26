@@ -7,11 +7,13 @@
 //   所得税法施行令 69条  勤続年数の計算（1年未満の端数）
 //   所得税法施行令 71条  障害による退職の要件
 //   復興財源確保法 13条・28条  復興特別所得税
+//   防衛財源確保法 5条の9・5条の26  防衛特別所得税（令和9年分から。復興と合わせて2.1%は変わらない）
 //   地方税法 328条の3・50条の4 分離課税に係る所得割の税率
 //
 // 金額・税率はこのファイルに書かない。すべて data/*.json から受け取る（設計原則3）。
 
 import { pick_version } from "./version_pick.js";
+import { fuka_zeiritsu, fuka_meisho, fuka_joritsu_percent } from "./fuka_zeiritsu.js";
 
 /**
  * 勤続年数を求める。
@@ -98,23 +100,27 @@ export function calc_kazei_taishoku_shotoku(kubun, shunyu, kojo, tanki_setting) 
 }
 
 /**
- * 復興特別所得税を含めた乗率の分子（分母は1000）。例：2.1% → 1021
+ * 復興特別所得税・防衛特別所得税を含めた乗率の分子（分母は1000）。例：2.1% → 1021
  *
- * ★Number() を通すのは、JSONの値が文字列 "2.1" になっていたときに
- *   (100 + "2.1") が文字列連結の "1002.1" になり、税額が10倍で出るため。
- *   例外にならず、もっともらしい数字が画面に出てしまう経路なので、入口で潰す。
+ * ★率は fuka_zeiritsu() が Number() を通して返す。JSONの値が文字列 "2.1" のまま
+ *   (100 + "2.1") と足すと文字列連結の "1002.1" になり、税額が10倍で出るため（判断ログ D-41）。
  */
-function fukko_bunshi(fukko_ritsu_percent) {
-  return Math.round((100 + Number(fukko_ritsu_percent)) * 10);
+function fuka_bunshi(gokei_percent) {
+  return Math.round((100 + gokei_percent) * 10);
 }
 
 /**
- * 源泉徴収すべき所得税及び復興特別所得税を求める。
+ * 源泉徴収すべき所得税（及び復興特別所得税・防衛特別所得税）を求める。
  * 申告書の提出あり：所法201条1項（速算表）／提出なし：所法201条3項（収入金額×20%）
- * いずれも復興特別所得税2.1%を加算し、1円未満切捨て（国税庁 速算表の注記）。
+ * いずれも付加税（令和8年分まで復興2.1%、令和9年分から防衛1%＋復興1.1%）を加算し、
+ * 合計額で1円未満切捨て（国税庁 速算表の注記／令和9年以後は防衛財源確保法5条の29第2項）。
+ *
+ * 率が読めないとき（版の形が崩れている）は null を返す。0円や NaN を返さない。
  */
 export function calc_shotokuzei(kazei_gaku, shunyu, is_teishutsu, rate_version) {
-  const bunshi = fukko_bunshi(rate_version["復興特別所得税率パーセント"]);
+  const fz = fuka_zeiritsu(rate_version);
+  if (fz === null) return null;
+  const bunshi = fuka_bunshi(fz.gokei);
 
   if (!is_teishutsu) {
     // 所法201条3項：退職手当等の金額に20%を乗じた金額（＋復興特別所得税で20.42%）
@@ -208,10 +214,30 @@ export function calc_taishokukin(input, tables) {
     input.is_teishutsu,
     rate_version,
   );
+  // ★率が読めないときは止める。NaN のまま返すと画面に「NaN円」が出る
+  if (shotokuzei === null) {
+    return {
+      ok: false,
+      riyu: "所得税の税率表の形が崩れています。通信できる場所で開き直し、直らなければ事務所に知らせてください。",
+    };
+  }
   const juminzei = calc_juminzei(kazei_gaku, version["住民税"]);
+  const fz = fuka_zeiritsu(rate_version);
 
   return {
     ok: true,
+    // 画面の見出し・内訳・根拠はここから組む（率を画面のコードに書かない）
+    fuka: {
+      fukko: fz.fukko,
+      boei: fz.boei,
+      meisho: fuka_meisho(fz),
+      joritsu_percent: fuka_joritsu_percent(fz),
+      mi_teishutsu_percent:
+        Math.round(
+          Number(rate_version["受給申告書が未提出の場合の所得税率パーセント"]) *
+            fuka_joritsu_percent(fz),
+        ) / 100,
+    },
     kubun,
     tekiyo_nenbun_hyoji: version["適用年分表示"],
     kinzoku_nensu,

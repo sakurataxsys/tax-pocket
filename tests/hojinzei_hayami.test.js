@@ -70,13 +70,21 @@ describe("① 段階税率の区切り", () => {
     assert.equal(Math.round(g["負担率"] * 10000) / 100, 23.62); // 23.62%
   });
 
-  test("合計は5つの税目の単純合計で、均等割を含まない", () => {
-    const r = build_zeigaku_hyo(data, KEIGEN_ARI);
-    for (const g of r["行"]) {
-      assert.equal(
-        g["合計"],
-        g["法人税"] + g["地方法人税"] + g["住民税法人税割"] + g["事業税"] + g["特別法人事業税"],
-      );
+  test("合計は6つの税目の単純合計で、均等割を含まない（防衛特別法人税は適用なしなら0扱い）", () => {
+    for (const bi of [KEIGEN_ARI, "2026-03-31"]) {
+      const r = build_zeigaku_hyo(data, bi);
+      for (const g of r["行"]) {
+        assert.equal(
+          g["合計"],
+          g["法人税"] +
+            g["地方法人税"] +
+            g["住民税法人税割"] +
+            g["事業税"] +
+            g["特別法人事業税"] +
+            (g["防衛特別法人税"] ?? 0),
+        );
+        assert.equal(g["負担率"], g["合計"] / g["所得"]);
+      }
     }
   });
 });
@@ -200,7 +208,7 @@ describe("④ 率の取り違え検知", () => {
 
   test("法定実効税率が33.58%になる（特別法人事業税も損金算入する式）", () => {
     // (0.232 × (1 + 0.103 + 0.07) + 0.07 × 1.37) ÷ (1 + 0.07 × 1.37)
-    const r = horitsu_jikko_zeiritsu(data);
+    const r = horitsu_jikko_zeiritsu(data, { boei: false });
     assert.equal(Math.round(r * 10000) / 100, 33.58);
 
     // ★分母に (1 + 特別法人事業税率) を掛け忘れると 34.4% 前後になり、約0.8ポイント高く出る
@@ -228,5 +236,86 @@ describe("④ 率の取り違え検知", () => {
     const k = build_kintowari_hyo(data)["判定の注意"].join("\n");
     assert.match(k, /資本準備金/, "資本金等の額と資本金＋資本準備金の大きい方");
     assert.match(k, /その市町村内/, "従業者数は市町村内");
+  });
+});
+
+// ------------------------------------------------------ ⑤ 防衛特別法人税
+
+describe("⑤ 防衛特別法人税（防衛財源確保法11条・13条・14条）", () => {
+  const gyo = (r, shotoku) => r["行"].find((x) => x["所得"] === shotoku);
+
+  test("所得1億円：(法人税額 − 年500万円) × 4%", () => {
+    // 法人税：800万 × 15% = 1,200,000 ＋ 9,200万 × 23.2% = 21,344,000 → 22,544,000
+    // 防衛特別法人税：(22,544,000 − 5,000,000) × 4% = 701,760
+    const g = gyo(build_zeigaku_hyo(data, KEIGEN_ARI), 100000000);
+    assert.equal(g["法人税"], 22544000);
+    assert.equal(g["防衛特別法人税"], 701760);
+  });
+
+  test("地方法人税・住民税法人税割の課税標準に防衛特別法人税を入れない", () => {
+    // 地方法人税法6条1号・地方税法23条1項4号イ＝法人税法等による法人税の額
+    const g = gyo(build_zeigaku_hyo(data, KEIGEN_ARI), 100000000);
+    assert.equal(g["地方法人税"], 2322032); // 22,544,000 × 10.3%
+    assert.equal(g["住民税法人税割"], 1578080); // 22,544,000 × 7%
+  });
+
+  test("法人税額が500万円以下なら0円（所得2,000万円）", () => {
+    // 法人税：1,200,000 ＋ 1,200万 × 23.2% = 2,784,000 → 3,984,000 ≦ 5,000,000
+    const g = gyo(build_zeigaku_hyo(data, KEIGEN_ARI), 20000000);
+    assert.equal(g["法人税"], 3984000);
+    assert.equal(g["防衛特別法人税"], 0);
+  });
+
+  test("令和8年4月1日以後に開始する事業年度から（境界）", () => {
+    const mae = build_zeigaku_hyo(data, "2026-03-31");
+    assert.equal(mae["防衛特別法人税の適用"], false);
+    assert.equal(gyo(mae, 100000000)["防衛特別法人税"], null);
+    // 適用前の合計は5税目のまま（防衛が混ざらない）
+    // 事業税：400万 × 3.5% = 140,000 ＋ 400万 × 5.3% = 212,000 ＋ 9,200万 × 7% = 6,440,000 → 6,792,000
+    // 特別法人事業税：6,792,000 × 37% = 2,513,040
+    assert.equal(gyo(mae, 100000000)["合計"], 22544000 + 2322032 + 1578080 + 6792000 + 2513040);
+    assert.equal(gyo(build_zeigaku_hyo(data, "2026-04-01"), 100000000)["合計"],
+      22544000 + 2322032 + 1578080 + 6792000 + 2513040 + 701760);
+
+    const ato = build_zeigaku_hyo(data, "2026-04-01");
+    assert.equal(ato["防衛特別法人税の適用"], true);
+    assert.equal(gyo(ato, 100000000)["防衛特別法人税"], 701760);
+  });
+
+  test("軽減の特例が切れた事業年度（令和9年4月1日開始）でも掛かる", () => {
+    // 法人税：800万 × 19% = 1,520,000 ＋ 21,344,000 = 22,864,000
+    // 防衛：(22,864,000 − 5,000,000) × 4% = 714,560
+    const g = gyo(build_zeigaku_hyo(data, KEIGEN_NASHI), 100000000);
+    assert.equal(g["法人税"], 22864000);
+    assert.equal(g["防衛特別法人税"], 714560);
+  });
+
+  test("率・基礎控除・適用開始日が条文どおり", () => {
+    const b = z["防衛特別法人税"];
+    assert.equal(b["率"], 4, "14条1項 百分の四");
+    assert.equal(b["基礎控除額"], 5000000, "13条3項1号 年五百万円");
+    assert.equal(b["適用開始日"], "2026-04-01", "11条 令和八年四月一日以後に開始する各事業年度");
+  });
+
+  test("法定実効税率は防衛ありで34.43%（基礎控除は織り込まない＝ASBJ実務対応報告48号9項）", () => {
+    // (0.232 × (1 + 0.103 + 0.07 + 0.04) + 0.07 × 1.37) ÷ (1 + 0.07 × 1.37)
+    //   = 0.377316 ÷ 1.0959 = 0.34430…
+    const r = horitsu_jikko_zeiritsu(data, { boei: true });
+    assert.equal(Math.round(r * 10000) / 100, 34.43);
+  });
+
+  test("data から防衛特別法人税が欠けても例外にせず、適用なしで組んで警告を立てる", () => {
+    const furui = structuredClone(data);
+    delete furui["税率"]["防衛特別法人税"];
+    const r = build_zeigaku_hyo(furui, KEIGEN_ARI);
+    assert.equal(r.ok, true);
+    assert.equal(r["防衛特別法人税の適用"], false);
+    assert.equal(r["防衛特別法人税の率が無い"], true);
+    assert.equal(gyo(r, 100000000)["防衛特別法人税"], null);
+    // 法定実効税率も例外にしない（例外になると早見表の画面ごと出なくなる）
+    assert.equal(horitsu_jikko_zeiritsu(furui, { boei: true }), null);
+    assert.equal(Math.round(horitsu_jikko_zeiritsu(furui, { boei: false }) * 10000) / 100, 33.58);
+    // 正しい data なら警告は立たない
+    assert.equal(build_zeigaku_hyo(data, KEIGEN_ARI)["防衛特別法人税の率が無い"], false);
   });
 });

@@ -6,8 +6,10 @@
 //   所得税法 205条        徴収税額（1号＝10%・100万円超は20%／2号＝控除後10%）
 //   所得税法施行令 320条  1号・2号・4号・5号・7号・8号の範囲
 //   所得税法施行令 322条  支払金額から控除する金額
-//   復興財確法 28条       復興特別所得税（所得税額の2.1%・令和19年12月31日まで）
+//   復興財確法 28条       復興特別所得税（所得税額の2.1%、令和9年1月1日以後は1.1%・令和29年12月31日まで）
 //   復興財確法 31条2項    端数（★所得税と復興特別所得税の「合計額」で1円未満切捨て）
+//   防衛財源確保法 5条の26  防衛特別所得税（令和9年1月1日以後の徴収から所得税額の1%）
+//   防衛財源確保法 5条の29第2項  端数（令和9年以後は所得税・防衛・復興の「合計額」で1円未満切捨て）
 //   所基通 204-1          支払先が法人以外の団体等である場合
 //   所基通 204-5          給与につき源泉徴収義務のある個人の意義
 //
@@ -24,6 +26,7 @@
 // 金額・税率・条文・画面の文言はこのファイルに書かない。すべて data/*.json から受け取る（設計原則3）。
 
 import { pick_version } from "./version_pick.js";
+import { fuka_zeiritsu, fuka_meisho } from "./fuka_zeiritsu.js";
 
 /** 判定の3値。画面の見出しはこのどれかになる */
 export const HANTEI = {
@@ -68,14 +71,19 @@ export function needs_kyuyo_nyuryoku(kubun) {
 }
 
 /**
- * 復興特別所得税を含めた乗率の分子（分母は1000）。例：2.1% → 1021
+ * 復興特別所得税・防衛特別所得税を含めた乗率の分子（分母は1000）。例：2.1% → 1021
  *
  * ★Number() を通すのは、JSONの値が文字列 "2.1" になっていたときに
  *   (100 + "2.1") が文字列連結の "1002.1" になり、税額が10倍で出るため。
  *   例外にならず、もっともらしい数字が画面に出てしまう経路なので、入口で潰す。
  */
-function fukko_bunshi(fukko_ritsu_percent) {
-  return Math.round((100 + Number(fukko_ritsu_percent)) * 10);
+function fuka_bunshi(fuka_gokei_percent) {
+  return Math.round((100 + Number(fuka_gokei_percent)) * 10);
+}
+
+/** 所得税の率に付加税を乗せた合計の率（例：10 → 10.21）。画面の「税率」行に出す */
+function gokei_ritsu(percent, fuka_gokei_percent) {
+  return Math.round(percent * (100 + fuka_gokei_percent)) / 100;
 }
 
 /**
@@ -94,13 +102,14 @@ export function calc_kojo(kubun, kyuyo_gaku) {
  *
  * 205条1号：支払金額×10%（100万円を超える部分は20%）
  * 205条2号：控除後の残額×10%
- * いずれも復興特別所得税2.1%を上乗せし、**合計額で1円未満切捨て**（復興財確法31条2項）。
+ * いずれも付加税（令和8年まで復興2.1%、令和9年から防衛1%＋復興1.1%）を上乗せし、
+ * **合計額で1円未満切捨て**（復興財確法31条2項／令和9年以後は防衛財源確保法5条の29第2項）。
  *
  * 掛け算はすべて整数のまま行う。所得税額を先に小数で出すと、
  * 2.1%を掛けたあとの1円未満の判定が浮動小数の誤差で揺れる。
  */
-export function calc_zeigaku(kingaku, kubun, zeiritsu, fukko_ritsu_percent, kyuyo_gaku) {
-  const bunshi = fukko_bunshi(fukko_ritsu_percent);
+export function calc_zeigaku(kingaku, kubun, zeiritsu, fuka_gokei_percent, kyuyo_gaku) {
+  const bunshi = fuka_bunshi(fuka_gokei_percent);
   const kihon = zeiritsu["基本パーセント"];
   let kekka;
 
@@ -338,8 +347,9 @@ export function calc_hoshu_gensen(input, tables) {
     };
   }
 
-  // 復興特別所得税の乗率は income_tax_rates.json から取る。
-  // 同じ数値を2か所に置くと、復興特別所得税が終わったときに片方だけ直す事故が起きる
+  // 復興特別所得税・防衛特別所得税の率は income_tax_rates.json から取る。
+  // 同じ数値を2か所に置くと、改正のときに片方だけ直す事故が起きる。
+  // ★版は支払日の年で引く。防衛特別所得税は「令和九年一月一日以後に行うべき」徴収から（5条の26第1項）
   const nen = Number(input.shiharai_bi.slice(0, 4));
   const rate_version = pick_version(income_tax_rates["版"], nen);
   if (rate_version === null) {
@@ -350,6 +360,15 @@ export function calc_hoshu_gensen(input, tables) {
         "復興特別所得税の期間が終わっている可能性があります。事務所で確認してください。",
     };
   }
+  const fz = fuka_zeiritsu(rate_version);
+  if (fz === null) {
+    return {
+      ...base,
+      keisan_shinai_riyu:
+        "税率表の形が崩れているため、税額を計算できませんでした。" +
+        "源泉徴収は必要です。金額は事務所で確認してください。",
+    };
+  }
 
   const kingaku = input.kingaku ?? 0;
   const kyuyo_gaku = input.kyuyo_gaku ?? 0;
@@ -357,7 +376,7 @@ export function calc_hoshu_gensen(input, tables) {
     kingaku,
     kubun,
     version["税率"],
-    rate_version["復興特別所得税率パーセント"],
+    fz.gokei,
     kyuyo_gaku,
   );
 
@@ -379,7 +398,17 @@ export function calc_hoshu_gensen(input, tables) {
       kingaku,
       kyuyo_gaku,
       zeiritsu: version["税率"],
-      fukko_ritsu_percent: rate_version["復興特別所得税率パーセント"],
+      fukko_ritsu_percent: fz.fukko,
+      boei_ritsu_percent: fz.boei,
+      fuka_gokei_percent: fz.gokei,
+      // 画面の「税率」行に出す合計の率。★率の合成は画面のコードでしない（テストが届かないため）
+      gokei_ritsu_percent: {
+        基本: gokei_ritsu(version["税率"]["基本パーセント"], fz.gokei),
+        超過: gokei_ritsu(version["税率"]["超過パーセント"], fz.gokei),
+      },
+      zeimoku_meisho: fuka_meisho(fz),
+      // 令和9年の版にだけある要確認の注意（年をまたぐ支払）。無ければ null
+      nen_matagi_chui: rate_version["年またぎの注意"] ?? null,
     },
   };
 }

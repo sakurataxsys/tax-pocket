@@ -16,6 +16,7 @@
 
 import { pick_version } from "./version_pick.js";
 import { calc_shotokuzei_engine } from "./shotokuzei.js";
+import { fuka_zeiritsu } from "./fuka_zeiritsu.js";
 
 /** 上限つきの区分表から、値が収まる行を取り出す。上限 null は「上限なし」。 */
 function find_row(table, value, key) {
@@ -150,8 +151,13 @@ export function calc_furusato(input, tables) {
   const tokurei = fv["特例控除"];
   const kihon = fv["基本控除"];
   const jiko_futan = fv["自己負担額"];
-  // 復興特別所得税の乗率は income_tax_rates.json から導く（同じ数値を2箇所に持たない）
-  const fukko_joritsu = 1 + rv["復興特別所得税率パーセント"] / 100;
+  // 復興特別所得税（令和9年分からは防衛特別所得税との合計）の乗率は income_tax_rates.json から導く
+  // （同じ数値を2箇所に持たない）。合計は令和9年分以後も2.1%で、附則5条の6の割合（1.021）と揃う
+  const fz = fuka_zeiritsu(rv);
+  if (fz === null) {
+    return { ok: false, riyu: "所得税の税率表の形が崩れています。事務所に知らせてください。" };
+  }
+  const fukko_joritsu = 1 + fz.gokei / 100;
   const genkai_zeiritsu = engine.shotokuzei.genkai_zeiritsu_percent;
 
   const chui = [...engine.chui];

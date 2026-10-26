@@ -272,7 +272,7 @@ async function render_taishokukin() {
   );
   const in_teishutsu = check_input(
     "「退職所得の受給に関する申告書」の提出を受けている",
-    "提出がない場合は退職金の額に一律20.42%で源泉徴収します",
+    "提出がない場合は、退職所得控除を差し引かずに退職金の額に一律の率で源泉徴収します",
   );
   in_teishutsu.input.checked = true;
 
@@ -385,11 +385,11 @@ function render_result(r, input, version, saishu_kakunin_bi) {
     },
     { label: "課税退職所得金額", value: format_en(r.kazei_gaku), note: kazei_note },
     {
-      label: "所得税及び復興特別所得税",
+      label: r.fuka.meisho,
       value: format_en(r.shotokuzei),
       note: r.is_teishutsu
-        ? "速算表による所得税 × 102.1% ／ 1円未満切捨て"
-        : "受給に関する申告書の提出がないため 退職金の額 × 20.42% ／ 1円未満切捨て",
+        ? `速算表による所得税 × ${r.fuka.joritsu_percent}% ／ 1円未満切捨て`
+        : `受給に関する申告書の提出がないため 退職金の額 × ${r.fuka.mi_teishutsu_percent}% ／ 1円未満切捨て`,
     },
     {
       label: "住民税",
@@ -403,7 +403,7 @@ function render_result(r, input, version, saishu_kakunin_bi) {
 
   const blocks = [
     result_card("手取額（概算）", format_en(r.tegaki), [
-      { label: "所得税及び復興特別所得税", value: format_en(r.shotokuzei) },
+      { label: r.fuka.meisho, value: format_en(r.shotokuzei) },
       { label: "住民税", value: format_en(r.juminzei.gokei) },
       { label: "区分", value: r.kubun },
     ]),
@@ -413,7 +413,7 @@ function render_result(r, input, version, saishu_kakunin_bi) {
   if (!r.is_teishutsu) {
     blocks.push(
       note_block("この計算について", [
-        "「退職所得の受給に関する申告書」の提出がないため、所得税は退職金の額に一律20.42%を乗じた源泉徴収額です。退職所得控除額や2分の1は反映されません。",
+        `「退職所得の受給に関する申告書」の提出がないため、所得税は退職金の額に一律${r.fuka.mi_teishutsu_percent}%を乗じた源泉徴収額です。退職所得控除額や2分の1は反映されません。`,
         "本人が確定申告をすることで精算されます。",
         "住民税は申告書の提出の有無にかかわらず、上記のとおり特別徴収されます。",
       ]),
@@ -430,7 +430,10 @@ function render_result(r, input, version, saishu_kakunin_bi) {
     note_block("根拠", [
       `適用年分：${format_nenbun(input.nen)}（収録している版：${r.tekiyo_nenbun_hyoji}）`,
       "所得税法30条・89条・201条、所得税法施行令69条・71条",
-      "復興財源確保法13条・28条（復興特別所得税2.1%）",
+      ...(r.fuka.boei > 0
+        ? [`防衛財源確保法5条の9・5条の26（防衛特別所得税${r.fuka.boei}%）`]
+        : []),
+      `復興財源確保法13条・28条（復興特別所得税${r.fuka.fukko}%）`,
       "地方税法328条の3・50条の4（分離課税に係る所得割）",
       `数値の最終確認日：${format_hizuke(saishu_kakunin_bi)}`,
     ]),
@@ -1471,8 +1474,18 @@ function render_hayami(data, kaishi_bi) {
   if (!r.ok) return message_box(r.riyu);
 
   const kinto = build_kintowari_hyo(data);
-  const jikko = horitsu_jikko_zeiritsu(data);
+  const jikko = horitsu_jikko_zeiritsu(data, { boei: false });
+  const jikko_boei = horitsu_jikko_zeiritsu(data, { boei: true });
   const blocks = [];
+
+  if (r["防衛特別法人税の率が無い"]) {
+    blocks.push(
+      warn_line(
+        "防衛特別法人税の率が読み込めていません（令和8年4月1日以後に開始する事業年度にかかります）。" +
+          "通信できる場所で開き直してください。",
+      ),
+    );
+  }
 
   if (r["軽減の期限切れ"]) {
     blocks.push(
@@ -1504,6 +1517,8 @@ function render_hayami(data, kaishi_bi) {
                 ["住民税 法人税割", g["住民税法人税割"]],
                 ["事業税", g["事業税"]],
                 ["特別法人事業税", g["特別法人事業税"]],
+                // 適用のない事業年度は行ごと出さない（0円と書くと「かかるが0円」と読める）
+                ...(g["防衛特別法人税"] === null ? [] : [["防衛特別法人税", g["防衛特別法人税"]]]),
               ].flatMap(([label, v]) => [
                 h("dt", {}, label),
                 h("dd", {}, format_en(v)),
@@ -1519,12 +1534,31 @@ function render_hayami(data, kaishi_bi) {
     ),
   );
 
+  // ★法定実効税率は事業年度開始日で切り替えない。税効果は解消見込み期の率を使うため両方を出す
+  const zr = data["税率"];
+  const jigyo_kubun = zr["事業税所得割"]["区分"];
+  const honsoku =
+    `法人税${zr["法人税"]["本則"]}%・事業税${jigyo_kubun[jigyo_kubun.length - 1]["率"].toFixed(1)}%で計算`;
+  const boei_b = zr["防衛特別法人税"];
   blocks.push(
-    note_block("法定実効税率（会計の税効果で使う率）", [
-      `${(jikko * 100).toFixed(2)}%（本則。法人税23.2%・事業税7.0%で計算）`,
-      "式：（法人税率 ×（1 ＋ 地方法人税率 ＋ 住民税法人税割率）＋ 事業税率 ×（1 ＋ 特別法人事業税率））÷（1 ＋ 事業税率 ×（1 ＋ 特別法人事業税率））",
-      "年800万円以下の部分は軽減税率が効くため、上の表の負担率はこれより低く出ます。",
-    ]),
+    note_block(
+      "法定実効税率（会計の税効果で使う率）",
+      jikko_boei === null
+        ? [
+            `${(jikko * 100).toFixed(2)}%（本則。${honsoku}）`,
+            "式：（法人税率 ×（1 ＋ 地方法人税率 ＋ 住民税法人税割率）＋ 事業税率 ×（1 ＋ 特別法人事業税率））÷（1 ＋ 事業税率 ×（1 ＋ 特別法人事業税率））",
+            "年800万円以下の部分は軽減税率が効くため、上の表の負担率はこれより低く出ます。",
+          ]
+        : [
+            `${(jikko_boei * 100).toFixed(2)}%（${format_hizuke(boei_b["適用開始日"])}以後に開始する事業年度。` +
+              `本則。${honsoku}、防衛特別法人税${boei_b["率"]}%を含む）`,
+            `${(jikko * 100).toFixed(2)}%（それより前に開始する事業年度）`,
+            "税効果では、一時差異が解消すると見込まれる期の率を使います。事業年度開始日ではなく解消見込み期で選んでください。",
+            "式：（法人税率 ×（1 ＋ 地方法人税率 ＋ 住民税法人税割率 ＋ 防衛特別法人税率）＋ 事業税率 ×（1 ＋ 特別法人事業税率））÷（1 ＋ 事業税率 ×（1 ＋ 特別法人事業税率））",
+            `防衛特別法人税の基礎控除（年${format_en(boei_b["基礎控除額"])}）は率に織り込みません（企業会計基準委員会 実務対応報告第48号 第9項）。`,
+            "年800万円以下の部分は軽減税率が効くため、上の表の負担率はこれより低く出ます。",
+          ],
+    ),
   );
 
   // ---- 表2 均等割
@@ -2997,8 +3031,13 @@ function render_hoshu_gensen_result(r, input, data, machi = false) {
   // 税額の計算過程
   if (r.keisan && zeigaku_wo_dasu) {
     const z = r.keisan.zeiritsu;
-    const gokei_ritsu = (percent) =>
-      format_ritsu((percent * (100 + r.keisan.fukko_ritsu_percent)) / 100, 2);
+    const kr = r.keisan;
+    // 合計の率は calc 側で組んだものを出すだけ（★ここで復興の率だけから組むと令和9年に10.11%と出る）
+    const gokei_ritsu = (kubun) => format_ritsu(kr.gokei_ritsu_percent[kubun], 2);
+    // 「＋防衛特別所得税1%＋復興特別所得税1.1%」。防衛の無い年は復興だけ
+    const fuka_note =
+      (kr.boei_ritsu_percent > 0 ? `＋防衛特別所得税${kr.boei_ritsu_percent}%` : "") +
+      `＋復興特別所得税${kr.fukko_ritsu_percent}%`;
     const steps = [];
 
     if (r.keisan.kojo > 0 || r.kubun["控除"]) {
@@ -3021,8 +3060,8 @@ function render_hoshu_gensen_result(r, input, data, machi = false) {
       });
       steps.push({
         label: "税率",
-        value: `${gokei_ritsu(z["基本パーセント"])}%`,
-        note: `所得税${z["基本パーセント"]}%（所法205条2号）＋復興特別所得税${r.keisan.fukko_ritsu_percent}%`,
+        value: `${gokei_ritsu("基本")}%`,
+        note: `所得税${z["基本パーセント"]}%（所法205条2号）${fuka_note}`,
       });
     } else {
       steps.push({
@@ -3032,24 +3071,30 @@ function render_hoshu_gensen_result(r, input, data, machi = false) {
       });
       steps.push({
         label: `${format_en(z["区切り金額"])}以下の部分`,
-        value: `${format_en(Math.min(r.keisan.kingaku, z["区切り金額"]))} × ${gokei_ritsu(z["基本パーセント"])}%`,
-        note: `所得税${z["基本パーセント"]}%（所法205条1号）＋復興特別所得税${r.keisan.fukko_ritsu_percent}%`,
+        value: `${format_en(Math.min(r.keisan.kingaku, z["区切り金額"]))} × ${gokei_ritsu("基本")}%`,
+        note: `所得税${z["基本パーセント"]}%（所法205条1号）${fuka_note}`,
       });
       if (r.keisan.chouka_ari) {
         steps.push({
           label: `${format_en(z["区切り金額"])}を超える部分`,
-          value: `${format_en(r.keisan.kingaku - z["区切り金額"])} × ${gokei_ritsu(z["超過パーセント"])}%`,
-          note: `所得税${z["超過パーセント"]}%（所法205条1号かっこ書き）＋復興特別所得税${r.keisan.fukko_ritsu_percent}%`,
+          value: `${format_en(r.keisan.kingaku - z["区切り金額"])} × ${gokei_ritsu("超過")}%`,
+          note: `所得税${z["超過パーセント"]}%（所法205条1号かっこ書き）${fuka_note}`,
         });
       }
     }
 
     steps.push({
-      label: "源泉徴収する所得税及び復興特別所得税",
+      label: `源泉徴収する${kr.zeimoku_meisho}`,
       value: format_en(r.zeigaku),
-      note: "所得税と復興特別所得税の合計額で、1円未満を切り捨てます（復興財確法31条2項）",
+      note:
+        kr.boei_ritsu_percent > 0
+          ? "所得税・防衛特別所得税・復興特別所得税の合計額で、1円未満を切り捨てます（防衛財源確保法5条の29第2項）"
+          : "所得税と復興特別所得税の合計額で、1円未満を切り捨てます（復興財確法31条2項）",
     });
     blocks.push(breakdown(steps));
+    if (kr.nen_matagi_chui) {
+      blocks.push(note_block("年をまたぐ支払（要確認）", [kr.nen_matagi_chui]));
+    }
   }
 
   // 対象にする金額の範囲。★税額より、ここを読ませたい

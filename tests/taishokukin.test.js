@@ -236,31 +236,86 @@ describe("④ 数値表が壊れているときの守り", () => {
   test("復興特別所得税の乗率が文字列でも、税額が10倍にならない", () => {
     // (100 + "2.1") が文字列連結になると分子が 10021 になる。
     // 例外にならず、10倍の税額がもっともらしい顔で画面に出る経路
-    const moji = {
+    // ★率は「付加税率パーセント」から読むので、壊すのもそちら（旧キーを壊しても何も検査しない）
+    for (const [nen, fz] of [
+      [2026, { 復興特別所得税: "2.1", 防衛特別所得税: "0" }],
+      [2027, { 復興特別所得税: "1.1", 防衛特別所得税: "1" }],
+    ]) {
+      const moji = {
+        ...tables,
+        income_tax: {
+          ...tables.income_tax,
+          版: tables.income_tax["版"].map((b) => ({ ...b, 付加税率パーセント: fz })),
+        },
+      };
+
+      // 申告書の提出あり（所法201条1項・速算表）＝「① 端数処理」と同じ入力・同じ答え
+      const teishutsu = calc_taishokukin(
+        input({ shunyu: 20000000, kinzoku_years: 25, nen }),
+        moji,
+      );
+      assert.equal(teishutsu.shotokuzei, 431372, `${nen}年`);
+
+      // 申告書の提出なし（所法201条3項・収入金額×20.42%）＝乗率を別の式で使う経路
+      const mi_teishutsu = calc_taishokukin(
+        input({ shunyu: 10000000, kinzoku_years: 10, is_teishutsu: false, nen }),
+        moji,
+      );
+      assert.equal(mi_teishutsu.shotokuzei, 2042000, `${nen}年`);
+    }
+  });
+
+  test("付加税率が壊れていたら、NaN円を出さずに止める", () => {
+    const kowashi = {
       ...tables,
       income_tax: {
         ...tables.income_tax,
-        版: [
-          {
-            ...tables.income_tax["版"][0],
-            復興特別所得税率パーセント: "2.1",
-          },
-        ],
+        版: tables.income_tax["版"].map((b) => ({
+          ...b,
+          付加税率パーセント: { 復興特別所得税: 2.1 },
+        })),
       },
     };
+    const r = calc_taishokukin(input(), kowashi);
+    assert.equal(r.ok, false);
+    assert.match(r.riyu, /税率表/);
+  });
+});
 
-    // 申告書の提出あり（所法201条1項・速算表）＝「① 端数処理」と同じ入力・同じ答え
-    const teishutsu = calc_taishokukin(
-      input({ shunyu: 20000000, kinzoku_years: 25 }),
-      moji,
-    );
-    assert.equal(teishutsu.shotokuzei, 431372);
+// ------------------------------------------------ ⑤ 防衛特別所得税（令和9年分から）
 
-    // 申告書の提出なし（所法201条3項・収入金額×20.42%）＝乗率を別の式で使う経路
-    const mi_teishutsu = calc_taishokukin(
-      input({ shunyu: 10000000, kinzoku_years: 10, is_teishutsu: false }),
-      moji,
-    );
-    assert.equal(mi_teishutsu.shotokuzei, 2042000);
+describe("⑤ 防衛特別所得税（防衛財源確保法5条の9・5条の26）", () => {
+  // ★画面の年分の選択肢は令和8年分まで（taishokukin.json の収録年分）。
+  //   令和9年分は calc に直接渡して、版を足したときの振る舞いを先に固定しておく
+  test("令和9年分も税額は令和8年分と同じ（合計2.1%は不変）", () => {
+    for (const over of [
+      { shunyu: 20000000, kinzoku_years: 25 },
+      { shunyu: 10000000, kinzoku_years: 10, is_teishutsu: false },
+      { shunyu: 33333333, kinzoku_years: 3, yakuin_kinzoku_nensu: 3 },
+    ]) {
+      const r8 = calc_taishokukin(input({ ...over, nen: 2026 }), tables);
+      const r9 = calc_taishokukin(input({ ...over, nen: 2027 }), tables);
+      assert.equal(r9.ok, true);
+      assert.equal(r9.shotokuzei, r8.shotokuzei, JSON.stringify(over));
+    }
+  });
+
+  test("令和9年分は呼び名と内訳が切り替わる。令和8年分は従来どおり", () => {
+    const r8 = calc_taishokukin(input({ nen: 2026 }), tables);
+    assert.deepEqual(r8.fuka, {
+      fukko: 2.1,
+      boei: 0,
+      meisho: "所得税及び復興特別所得税",
+      joritsu_percent: 102.1,
+      mi_teishutsu_percent: 20.42,
+    });
+    const r9 = calc_taishokukin(input({ nen: 2027 }), tables);
+    assert.deepEqual(r9.fuka, {
+      fukko: 1.1,
+      boei: 1,
+      meisho: "所得税、防衛特別所得税及び復興特別所得税",
+      joritsu_percent: 102.1,
+      mi_teishutsu_percent: 20.42,
+    });
   });
 });

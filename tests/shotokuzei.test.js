@@ -848,3 +848,49 @@ describe("⑤ レビュー由来の回帰テスト", () => {
     assert.equal(with_kojo_zero.ok, true);
   });
 });
+
+// ------------------------------------------------ 防衛特別所得税（令和9年分から）
+
+describe("防衛特別所得税の取りこぼしを封じる（防衛財源確保法5条の9）", () => {
+  // ★エンジンは復興特別所得税しか計算しない。防衛のある版を引いたら、1%を黙って落とさずに止める。
+  //   いま令和9年分は shotokuzei.json に版が無く手前で止まるので、合成データで先に固定する
+  const boei_ari = (nen) => ({
+    ...tables,
+    income_tax: {
+      ...tables.income_tax,
+      版: [
+        {
+          ...pick_version(tables.income_tax["版"], NEN_R7),
+          適用開始年: nen,
+          適用終了年: nen,
+          付加税率パーセント: { 復興特別所得税: 1.1, 防衛特別所得税: 1 },
+        },
+      ],
+    },
+  });
+
+  test("防衛特別所得税のある版を引いたら ok:false で止まる", () => {
+    const r = calc_shotokuzei_engine(input({ kyuyo_shunyu: 5000000 }), boei_ari(NEN_R7));
+    assert.equal(r.ok, false);
+    assert.match(r.riyu, /防衛特別所得税/);
+  });
+
+  test("付加税率が壊れていたら ok:false で止まる", () => {
+    const kowashi = {
+      ...tables,
+      income_tax: {
+        ...tables.income_tax,
+        版: tables.income_tax["版"].map((b) => ({ ...b, 付加税率パーセント: {} })),
+      },
+    };
+    const r = calc_shotokuzei_engine(input({ kyuyo_shunyu: 5000000 }), kowashi);
+    assert.equal(r.ok, false);
+  });
+
+  test("令和7年分・令和8年分は従来どおり復興2.1%で計算する", () => {
+    for (const nen of [NEN_R7, NEN_R8]) {
+      const r = calc_shotokuzei_engine(input({ nen, kyuyo_shunyu: 5000000 }), tables);
+      assert.equal(r.ok, true, `${nen}年分`);
+    }
+  });
+});

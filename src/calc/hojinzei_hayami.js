@@ -8,6 +8,11 @@
 //   地方税法 72条の24の7 1項3号        事業税の所得割（3.5 / 5.3 / 7.0%）
 //   特別法人事業税法 7条3号            基準法人所得割額 × 37%
 //   地方税法 52条・312条               均等割
+//   防衛財源確保法 11条・13条・14条    防衛特別法人税（令和8年4月1日以後開始の事業年度。
+//                                      (法人税額 − 年500万円) × 4%）
+//
+// ★防衛特別法人税は地方法人税・住民税法人税割の課税標準に入らない。
+//   どちらも課税標準は「法人税法等により計算した法人税の額」（地方法人税法6条1号・地方税法23条1項4号イ）。
 //
 // ★これは計算機ではない。入力は事業年度開始日だけで、所得は data の「所得規模の行」を使う。
 //   法人税の計算機を作らないというのが第1版の設計判断（docs/仕様.md §3）。
@@ -102,13 +107,22 @@ export function build_zeigaku_hyo(data, jigyo_nendo_kaishi_bi) {
   const jumin = z["住民税法人税割"];
   const jumin_ritsu = jumin["道府県の標準税率"] + jumin["市町村の標準税率"];
 
+  // 防衛特別法人税。★率が data に無いとき（古い data を読んだ新しい画面）は止めずに「適用なし」で組み、
+  // 警告を立てる（均等割の表まで道連れにしない）。適用開始日も data 側にあるので、無いときは開始日を問わず警告する
+  const boei = z["防衛特別法人税"] ?? null;
+  const boei_tekiyo = boei !== null && jigyo_nendo_kaishi_bi >= boei["適用開始日"];
+  const boei_ritsu_ga_nai = boei === null;
+
   const gyo = data["所得規模の行"].map((shotoku) => {
     const hojin = calc_hojinzei(shotoku, z, keigen_tekiyo);
     const chiho = en((hojin["税額"] * z["地方法人税"]["率"]) / 100);
     const juminzei = en((hojin["税額"] * jumin_ritsu) / 100);
     const jigyo = calc_jigyozei(shotoku, z);
     const tokubetsu = en((jigyo["税額"] * z["特別法人事業税"]["率"]) / 100);
-    const gokei = hojin["税額"] + chiho + juminzei + jigyo["税額"] + tokubetsu;
+    const boei_zei = boei_tekiyo
+      ? en((Math.max(0, hojin["税額"] - boei["基礎控除額"]) * boei["率"]) / 100)
+      : null;
+    const gokei = hojin["税額"] + chiho + juminzei + jigyo["税額"] + tokubetsu + (boei_zei ?? 0);
     return {
       所得: shotoku,
       法人税: hojin["税額"],
@@ -118,6 +132,7 @@ export function build_zeigaku_hyo(data, jigyo_nendo_kaishi_bi) {
       事業税: jigyo["税額"],
       事業税の内訳: jigyo["内訳"],
       特別法人事業税: tokubetsu,
+      防衛特別法人税: boei_zei,
       合計: gokei,
       負担率: gokei / shotoku,
     };
@@ -126,6 +141,8 @@ export function build_zeigaku_hyo(data, jigyo_nendo_kaishi_bi) {
   return {
     ok: true,
     行: gyo,
+    防衛特別法人税の適用: boei_tekiyo,
+    防衛特別法人税の率が無い: boei_ritsu_ga_nai,
     軽減の適用: keigen_tekiyo,
     // 期限を過ぎたら黙って本則に戻さず1行出す（延長されていれば人が気づける。判断ログ D-20 と同じ）
     軽減の期限切れ: !keigen_tekiyo,
@@ -146,19 +163,27 @@ export function build_zeigaku_hyo(data, jigyo_nendo_kaishi_bi) {
  *
  * 軽減税率は所得の区分ごとに違うため、ここは本則（法人税23.2%・事業税7.0%）で出す。
  * 年800万円以下の部分はこれより低くなる。
+ *
+ * boei: true なら防衛特別法人税の率を括弧内に足す（地方法人税と同じ扱い＝ASBJ 実務対応報告48号9項）。
+ * 基礎控除（年500万円）は率に織り込まない。
+ * ★事業年度開始日では切り替えない。税効果は解消見込み期の率を使う（同8項→税効果適用指針46項）ため、
+ *   画面には防衛あり・なしの両方を出す。開始日で選ぶと、令和8年9月期の決算で古い率を見せてしまう。
+ *   data に防衛の率が無いときは null を返す。
  */
-export function horitsu_jikko_zeiritsu(data) {
+export function horitsu_jikko_zeiritsu(data, { boei }) {
   const z = data["税率"];
+  if (boei && !z["防衛特別法人税"]) return null;
   const hojin = z["法人税"]["本則"] / 100;
   const chiho = z["地方法人税"]["率"] / 100;
   const jumin =
     (z["住民税法人税割"]["道府県の標準税率"] + z["住民税法人税割"]["市町村の標準税率"]) / 100;
+  const boei_ritsu = boei ? z["防衛特別法人税"]["率"] / 100 : 0;
   const kubun = z["事業税所得割"]["区分"];
   const jigyo = kubun[kubun.length - 1]["率"] / 100; // 最上位の区分（800万円超）
   const tokubetsu = z["特別法人事業税"]["率"] / 100;
 
   const jigyo_kei = jigyo * (1 + tokubetsu);
-  return (hojin * (1 + chiho + jumin) + jigyo_kei) / (1 + jigyo_kei);
+  return (hojin * (1 + chiho + jumin + boei_ritsu) + jigyo_kei) / (1 + jigyo_kei);
 }
 
 /** 均等割の表（表2）。条文の区分をそのまま返すだけ */
