@@ -346,7 +346,7 @@ describe("⑤ 相続人の構成の分岐", () => {
       ).minpo_kosei,
       "shutoku",
     ).list;
-    assert.equal(bun.find((p) => p.label === "孫養子").nibai_kasan, true);
+    assert.equal(bun.find((p) => p.label === "孫・ひ孫の養子").nibai_kasan, true);
     assert.equal(bun.find((p) => p.label === "孫（代襲相続）").nibai_kasan, false);
   });
 
@@ -448,7 +448,7 @@ describe("⑥ 養子の数の制限と、実際に財産を取得する人", () 
     for (const m of r.pattern1.meisai) assert.equal(m.kazei_kakaku, 100000000);
     assert.deepEqual(
       r.pattern1.meisai.map((m) => m.label),
-      ["子（実子）", "子（養子）", "孫養子"],
+      ["子（実子）", "子（養子）", "孫・ひ孫の養子"],
     );
   });
 

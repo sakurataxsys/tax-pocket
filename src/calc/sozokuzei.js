@@ -160,7 +160,7 @@ export function hotei_sozokubun(kosei, yoto) {
       list.push({ key: `yoshi${i}`, label: "子（養子）", bun: kabu, nibai_kasan: false });
     }
     for (let i = 0; i < kosei.mago_yoshi; i++) {
-      list.push({ key: `magoyoshi${i}`, label: "孫養子", bun: kabu, nibai_kasan: true });
+      list.push({ key: `magoyoshi${i}`, label: "孫・ひ孫の養子", bun: kabu, nibai_kasan: true });
     }
     if (kosei.daishu > 0) {
       const mago_bun = kabu / kosei.daishu;
